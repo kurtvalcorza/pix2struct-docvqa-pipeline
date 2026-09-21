@@ -11,7 +11,6 @@ the release gate is defined in docs/release-verification.md.
 from __future__ import annotations
 
 import ast
-import hashlib
 import importlib.util
 import io
 import json
@@ -23,7 +22,7 @@ ROOT = Path(__file__).resolve().parents[1]
 PACKAGE = "pix2struct_docvqa_pipeline"
 REPO_NAME = "pix2struct-docvqa-pipeline"
 NOTEBOOK_NAME = "pix2struct_docvqa_colab.ipynb"
-EXPECTED_PROFILE = "TASK-INFERENCE"
+EXPECTED_PROFILE = "E2E"
 EXPECTED_MODEL_ID = "google/pix2struct-docvqa-base"
 PIPELINE_CLASS = "Pix2StructDocVQAPipeline"
 # Extra 40-hex commits the docs may legitimately cite (none yet).
@@ -34,42 +33,43 @@ BYOD_GATES = ("USE_BYOD",)
 
 EXPECTED_OUTPUTS = (
     "outputs/pix2struct_docvqa_input_manifest.json",
-    "outputs/pix2struct_docvqa_evaluation_report.json",
     "outputs/pix2struct_docvqa_result.json",
-    "outputs/pix2struct_docvqa_answers.csv",
-    "outputs/pix2struct_docvqa_annotated.png",
+    "outputs/pix2struct_docvqa_predictions.csv",
+    "outputs/pix2struct_docvqa_adapter",
 )
 
 CODE_MARKERS = (
-    "input_manifest = validate_inputs(image, questions, max_new_tokens=max_new_tokens, names=[image_name])",
-    "validate_inputs(image, ['   '])",
-    "results.append(pipe.answer(image, question, max_new_tokens=max_new_tokens))",
-    "report = evaluation_report(results, golds, sample_kind=sample_kind)",
-    "print({'ceilings': {'MIN_IMAGE_SIDE': MIN_IMAGE_SIDE, 'MAX_IMAGE_SIDE': MAX_IMAGE_SIDE, 'MAX_PATCHES': MAX_PATCHES, 'MAX_QUESTION_CHARS': MAX_QUESTION_CHARS, 'MAX_NEW_TOKENS': MAX_NEW_TOKENS, 'DEFAULT_MAX_NEW_TOKENS': DEFAULT_MAX_NEW_TOKENS, 'DECODING': DECODING}})",
-    "max_new_tokens = 32",
-    "def synthetic_form(width=850, height=1100):",
-    "image, qa = synthetic_form()",
-    "hashlib.sha256(np.asarray(image.convert('RGB')).tobytes()).hexdigest()",
-    "result['truncated']",
-    "annotated.save('outputs/pix2struct_docvqa_annotated.png')",
-    "writer.writerow(['image', 'question', 'answer', 'new_tokens', 'truncated'])",
+    "splits = build_sample_dataset()",
+    "records = load_byod_dataset(upload_name)",
+    "splits = split_dataset(records, seed=SPLIT_SEED)",
+    "validated = {name: validate_dataset(rows) for name, rows in splits.items()}",
+    "split_counts = check_split_disjoint(splits)",
+    "assert corpus_digest == SAMPLE_DIGEST",
+    "empty = empty_baseline(test_records)",
+    "majority = majority_answer_baseline(test_records, train_records)",
+    "frozen = pipe.evaluate(test_records)",
+    "adapt_result = pipe.adapt(",
+    "adapted = pipe.evaluate(test_records)",
+    "pipe.save_artifact(artifact_dir, metadata=",
+    "reloaded = Pix2StructDocVQAPipeline.from_artifact(",
+    "assert actual_answers == expected_answers",
     "'model_revision': MODEL_REVISION",
     "'model_license': MODEL_LICENSE",
     "transformers.__version__",
-    "'device': pipe.device",
+    "torch.cuda.get_device_name(0)",
 )
 
 MARKDOWN_MARKERS = (
-    "**Capability:** OCR-free document question answering",
-    "**No adaptation occurs:**",
-    "The token budget is a **caller-owned request parameter**",
-    "**No score exists**",
-    "a `truncated` flag that is true when the budget",
-    "needs labelled question/answer pairs",
-    "the verdict is `not-measurable`",
-    "`sample-sanity`",
-    "**The model answers any question about any image**",
-    "PDF or multi-page documents (one page image per call)",
+    "**Capability:** end-to-end adaptation",
+    "Documents—not question rows—define the train/validation/test boundary",
+    "## 4. Build or upload the corpus",
+    "## 5. Record non-neural baselines",
+    "## 6. Adapt the final two decoder blocks",
+    "## 7. Evaluate the selected adapter",
+    "## 8. Export, reload, and verify answer parity",
+    "A negative delta is valid evidence",
+    "point estimates",
+    "does not prove DocVQA benchmark quality",
 )
 
 # Runtime/model-library access must stay inside the carried module (ST1/ST2).
@@ -410,7 +410,9 @@ def _validate_notebook_structure(path: Path, notebook: dict) -> tuple[list[tuple
         generated.get("module") == f"src/{PACKAGE}/pipeline.py",
         f"{path.name}: generated_from.module must be src/{PACKAGE}/pipeline.py",
     )
-    module_sha = hashlib.sha256(_read(ROOT / "src" / PACKAGE / "pipeline.py").encode("utf-8")).hexdigest()
+    build = _load_tool("build_notebook")
+    template = _load_tool("notebook_template").TEMPLATE
+    module_sha = build.load_context(ROOT, template)["module_sha256"]
     _check(
         generated.get("module_sha256") == module_sha,
         f"{path.name}: generated_from.module_sha256 does not match src/ (PAR4: regenerate the notebook)",
@@ -481,38 +483,46 @@ def _validate_gates(path: Path, code_cells: list[tuple[int, str, ast.Module]]) -
                 )
 
 
-def _validate_embedded_module(path: Path, notebook: dict, build) -> int:
-    """PAR1: exactly one tagged cell, equal to the module after the documented rewrites."""
+def _validate_embedded_modules(path: Path, notebook: dict, build) -> set[int]:
+    """PAR1: one tagged cell per declared module, in order and equal after rewrites."""
     tagged = [
         (index, cell)
         for index, cell in enumerate(notebook.get("cells", []))
         if cell.get("cell_type") == "code" and cell.get("metadata", {}).get("dimer", {}).get("embedded_module")
     ]
-    _check(len(tagged) == 1, f"{path.name}: exactly one cell must be tagged metadata.dimer.embedded_module (ST2)")
-    index, cell = tagged[0]
+    template = _load_tool("notebook_template").TEMPLATE
+    context = build.load_context(ROOT, template)
     _check(
-        cell["metadata"]["dimer"]["embedded_module"] == f"src/{PACKAGE}/pipeline.py",
-        f"{path.name}: embedded_module tag must name src/{PACKAGE}/pipeline.py",
+        [cell["metadata"]["dimer"]["embedded_module"] for _, cell in tagged]
+        == context["module_rels"],
+        f"{path.name}: embedded module tags/order differ from the template (ST2)",
     )
-    expected = build.apply_rewrites(_read(ROOT / "src" / PACKAGE / "pipeline.py"))
-    _check(
-        _cell_source(cell).rstrip("\n") + "\n" == expected,
-        f"{path.name}: embedded module differs from src/{PACKAGE}/pipeline.py (PAR1); regenerate the notebook",
-    )
-    return index
+    for (_index, cell), module, relative in zip(
+        tagged, context["modules"], context["module_rels"], strict=True
+    ):
+        _check(
+            cell["metadata"]["dimer"].get("module_sha256")
+            == context["per_module_sha256"][relative],
+            f"{path.name}: {relative} module digest differs (PAR1)",
+        )
+        _check(
+            _cell_source(cell).rstrip("\n") + "\n" == context["embedded"][module],
+            f"{path.name}: embedded {relative} differs from src/ (PAR1); regenerate",
+        )
+    return {index for index, _cell in tagged}
 
 
 def _validate_identity(
-    path: Path, code_cells: list[tuple[int, str, ast.Module]], embedded_index: int, revision: str
+    path: Path, code_cells: list[tuple[int, str, ast.Module]], embedded_indexes: set[int], revision: str
 ) -> None:
     """Identity constants are bound in the carried module only; nothing outside rebinds them."""
     for index, _source, tree in code_cells:
-        if index == embedded_index:
+        if index in embedded_indexes:
             continue
         for node in ast.walk(tree):
             rebound = [name for name in _assignment_targets(node) if name in IDENTITY_NAMES]
             _check(not rebound, f"{path.name}: {rebound} must not be rebound outside the module cell (cell {index})")
-    outside = "\n".join(source for index, source, _ in code_cells if index != embedded_index)
+    outside = "\n".join(source for index, source, _ in code_cells if index not in embedded_indexes)
     manifest_block = re.search(r"^MANIFEST = (\{.*?^\})$", outside, re.M | re.S)
     _check(manifest_block is not None, f"{path.name}: model cell must carry an inline MANIFEST literal (ST3)")
     outside_without_manifest = outside.replace(manifest_block.group(0), "")
@@ -553,12 +563,15 @@ def _validate_bootstrap_guard(path: Path, code_cells: list[tuple[int, str, ast.M
 
 
 def _validate_notebook_content(
-    path: Path, code_cells: list[tuple[int, str, ast.Module]], markdown: str, embedded_index: int
+    path: Path,
+    code_cells: list[tuple[int, str, ast.Module]],
+    markdown: str,
+    embedded_indexes: set[int],
 ) -> None:
     model_id, _revision = _package_identity()
     stripped = {index: _strip_comments(source) for index, source, _ in code_cells}
     code = "\n".join(stripped.values())
-    outside = "\n".join(text for index, text in stripped.items() if index != embedded_index)
+    outside = "\n".join(text for index, text in stripped.items() if index not in embedded_indexes)
     missing = [marker for marker in COMMON_CODE_MARKERS + CODE_MARKERS if marker not in code]
     _check(not missing, f"{path.name}: missing required source markers: {missing}")
     present = [label for label, pattern in FORBIDDEN_PATTERNS if pattern.search(code)]
@@ -588,11 +601,11 @@ def validate_notebooks() -> None:
     build = _load_tool("build_notebook")
     notebook = json.loads(_read(path))
     code_cells, markdown = _validate_notebook_structure(path, notebook)
-    embedded_index = _validate_embedded_module(path, notebook, build)
+    embedded_indexes = _validate_embedded_modules(path, notebook, build)
     _model_id, revision = _package_identity()
-    _validate_identity(path, code_cells, embedded_index, revision)
+    _validate_identity(path, code_cells, embedded_indexes, revision)
     _validate_parity(path, notebook, code_cells, build)
-    _validate_notebook_content(path, code_cells, markdown, embedded_index)
+    _validate_notebook_content(path, code_cells, markdown, embedded_indexes)
     registry = _read(tutorials / "README.md")
     _check(f"`{path.name}`" in registry, f"{path.name} missing from tutorials/README.md")
     _check(f"`{EXPECTED_PROFILE}`" in registry, f"tutorials/README.md must record `{EXPECTED_PROFILE}`")

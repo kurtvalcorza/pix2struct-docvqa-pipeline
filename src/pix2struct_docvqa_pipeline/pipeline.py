@@ -12,9 +12,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import re
+import time
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -26,6 +28,17 @@ MODEL_LICENSE = "apache-2.0"
 MODEL_KEY = "pix2struct-docvqa-base"
 DEFAULT_WEIGHTS_DIR = Path(__file__).resolve().parents[2] / "weights" / MODEL_KEY
 MANIFEST_NAME = "dimer-base-manifest.json"
+WEIGHT_FILE = "model.safetensors"
+WEIGHT_SHA256 = "067f7f314d87fa56daa5bcfaf36fa0b33ceebf7b7d4fae6a1e51ab7af64ee0b5"
+DECODER_LAYERS = 12
+DEFAULT_TRAINABLE_DECODER_LAYERS = 2
+MAX_TARGET_TOKENS = 32
+MAX_EVAL_RECORDS = 2_000
+MIN_SCORED_RECORDS = 50
+ARTIFACT_FORMAT = "org.valcorza.pix2struct-docvqa-base.adapter.v1"
+ARTIFACT_FORMAT_VERSION = "1.0"
+ARTIFACT_WEIGHTS_NAME = "adapter.safetensors"
+ARTIFACT_MANIFEST_NAME = "manifest.json"
 
 # Generation ceilings. DocVQA answers are short spans (the checkpoint's text_config max_length is 20);
 # the default leaves room for a long address or title, the ceiling bounds runaway generation.
@@ -352,6 +365,10 @@ class Pix2StructDocVQAPipeline:
     device: str = "cpu"
     dtype: str = "float32"
     source: str = "injected"
+    adapter: dict[str, Any] | None = field(default=None, repr=False)
+    _model: Any = field(default=None, repr=False)
+    _processor: Any = field(default=None, repr=False)
+    _font_bytes: bytes | None = field(default=None, repr=False)
 
     @classmethod
     def from_pretrained(
@@ -384,6 +401,8 @@ class Pix2StructDocVQAPipeline:
             raise RuntimeError("snapshot image processor is not the VQA variant (is_vqa=False); refusing")
         model = Pix2StructForConditionalGeneration.from_pretrained(location, dtype=torch.float32, **common)
         model = model.eval().to(resolved_device)
+        for param in model.parameters():
+            param.requires_grad_(False)
 
         def runner(image: Image.Image, question: str, max_new_tokens: int) -> dict[str, Any]:
             # The image processor is called directly: Pix2StructProcessor.__call__ drops the
@@ -399,7 +418,15 @@ class Pix2StructDocVQAPipeline:
             decoded = processor.tokenizer.batch_decode(generated, skip_special_tokens=True)[0]
             return {"answer": decoded, "new_tokens": int(answer_ids.shape[0]) - 1}
 
-        return cls(runner, resolved_device, "float32", source)
+        return cls(
+            runner,
+            resolved_device,
+            "float32",
+            source,
+            _model=model,
+            _processor=processor,
+            _font_bytes=font_bytes,
+        )
 
     def answer(
         self,
@@ -427,3 +454,351 @@ class Pix2StructDocVQAPipeline:
             "model_id": MODEL_ID,
             "model_revision": MODEL_REVISION,
         }
+
+    # ---- adaptation contract -----------------------------------------------------------------------
+
+    def _require_model(self) -> tuple[Any, Any]:
+        if self._model is None or self._processor is None or self._font_bytes is None:
+            raise ValueError(
+                "this operation needs a pipeline built with from_pretrained() or from_artifact()"
+            )
+        return self._model, self._processor
+
+    def evaluate(
+        self,
+        records: Sequence[Mapping[str, Any]],
+        *,
+        max_new_tokens: int = DEFAULT_MAX_NEW_TOKENS,
+    ) -> dict[str, Any]:
+        """Answer and score a validated document-QA corpus with ANLS and exact match."""
+        from .metrics import qa_metrics
+        from .samples import validate_dataset
+
+        checked = validate_dataset(records, min_records=1, max_records=MAX_EVAL_RECORDS)["records"]
+        started = time.perf_counter()
+        predictions = [
+            self.answer(record["image"], record["question"], max_new_tokens=max_new_tokens)["answer"]
+            for record in checked
+        ]
+        metrics = qa_metrics(predictions, checked)
+        metrics.update(
+            {
+                "max_new_tokens": max_new_tokens,
+                "verdict": "measured" if len(checked) >= MIN_SCORED_RECORDS else "measured-small-sample",
+                "adapted": self.adapter is not None,
+                "seconds": round(time.perf_counter() - started, 3),
+                "model_id": MODEL_ID,
+                "model_revision": MODEL_REVISION,
+            }
+        )
+        return metrics
+
+    def _trainable_names(self, trainable_decoder_layers: int) -> list[str]:
+        if (
+            isinstance(trainable_decoder_layers, bool)
+            or not isinstance(trainable_decoder_layers, int)
+            or not 1 <= trainable_decoder_layers <= DECODER_LAYERS
+        ):
+            raise ValueError(f"trainable_decoder_layers must be an int in 1..{DECODER_LAYERS}")
+        model, _ = self._require_model()
+        first = DECODER_LAYERS - trainable_decoder_layers
+        prefixes = tuple(f"decoder.layer.{index}." for index in range(first, DECODER_LAYERS))
+        names = [name for name, _param in model.named_parameters() if name.startswith(prefixes)]
+        if not names:
+            raise RuntimeError("no decoder-layer parameters matched the pinned Pix2Struct architecture")
+        return names
+
+    def _training_inputs(self, records: Sequence[Mapping[str, Any]]) -> Any:
+        model, processor = self._require_model()
+        device = next(model.parameters()).device
+        return processor.image_processor(
+            images=[record["image"] for record in records],
+            header_text=[record["question"] for record in records],
+            max_patches=MAX_PATCHES,
+            return_tensors="pt",
+            font_bytes=self._font_bytes,
+        ).to(device)
+
+    def adapt(
+        self,
+        train: Sequence[Mapping[str, Any]],
+        val: Sequence[Mapping[str, Any]] | None = None,
+        *,
+        epochs: int = 3,
+        lr: float = 2e-4,
+        batch_size: int = 1,
+        trainable_decoder_layers: int = DEFAULT_TRAINABLE_DECODER_LAYERS,
+        seed: int = 0,
+        progress: Callable[[dict[str, Any]], None] | None = None,
+    ) -> dict[str, Any]:
+        """Tune only the last decoder blocks and retain the best validation-ANLS epoch."""
+        from .samples import validate_dataset
+
+        if isinstance(epochs, bool) or not isinstance(epochs, int) or not 1 <= epochs <= 20:
+            raise ValueError("epochs must be an int in 1..20")
+        if not 0.0 < lr <= 1e-3:
+            raise ValueError("lr must be in (0, 1e-3]")
+        if isinstance(batch_size, bool) or not isinstance(batch_size, int) or not 1 <= batch_size <= 16:
+            raise ValueError("batch_size must be an int in 1..16")
+        names = self._trainable_names(trainable_decoder_layers)
+        train_checked = validate_dataset(train)["records"]
+        val_checked = (
+            validate_dataset(val, min_records=1, max_records=MAX_EVAL_RECORDS)["records"] if val else []
+        )
+
+        import torch
+
+        torch.manual_seed(seed)
+        model, processor = self._require_model()
+        device = next(model.parameters()).device
+        wanted = set(names)
+        initial_state = {
+            name: value.detach().clone()
+            for name, value in model.state_dict().items()
+            if name in wanted
+        }
+        best_state = {name: value.clone() for name, value in initial_state.items()}
+        started = time.perf_counter()
+
+        def score_val() -> dict[str, Any] | None:
+            if not val_checked:
+                return None
+            model.eval()
+            return {
+                key: value
+                for key, value in self.evaluate(val_checked).items()
+                if key in ("anls", "exact_match", "n")
+            }
+
+        history: list[dict[str, Any]] = []
+        entry: dict[str, Any] = {
+            "epoch": 0,
+            "train_loss": None,
+            "val": score_val(),
+            "note": "frozen model",
+        }
+        history.append(entry)
+        if progress:
+            progress(entry)
+        best_score = entry["val"]["anls"] if entry["val"] else -math.inf
+        best_epoch = 0
+        generator = torch.Generator().manual_seed(seed)
+        for name, param in model.named_parameters():
+            param.requires_grad_(name in wanted)
+        params = [param for param in model.parameters() if param.requires_grad]
+        optimiser = torch.optim.AdamW(params, lr=lr, weight_decay=0.01)
+        try:
+            for epoch in range(1, epochs + 1):
+                model.train()
+                model.encoder.eval()
+                order = torch.randperm(len(train_checked), generator=generator).tolist()
+                losses = []
+                for start in range(0, len(order), batch_size):
+                    indexes = order[start : start + batch_size]
+                    batch = [train_checked[index] for index in indexes]
+                    inputs = self._training_inputs(batch)
+                    tokenized = processor.tokenizer(
+                        [record["answers"][0] for record in batch],
+                        padding=True,
+                        truncation=True,
+                        max_length=MAX_TARGET_TOKENS,
+                        return_tensors="pt",
+                    ).to(device)
+                    labels = tokenized["input_ids"].clone()
+                    labels[labels == processor.tokenizer.pad_token_id] = -100
+                    optimiser.zero_grad(set_to_none=True)
+                    output = model(**inputs, labels=labels)
+                    output.loss.backward()
+                    torch.nn.utils.clip_grad_norm_(params, 1.0)
+                    optimiser.step()
+                    losses.append(float(output.loss.detach()))
+                model.eval()
+                entry = {
+                    "epoch": epoch,
+                    "train_loss": sum(losses) / len(losses),
+                    "val": score_val(),
+                }
+                history.append(entry)
+                if progress:
+                    progress(entry)
+                current = entry["val"]["anls"] if entry["val"] else math.inf
+                if current > best_score or not entry["val"]:
+                    best_score = current
+                    best_state = {
+                        name: value.detach().clone()
+                        for name, value in model.state_dict().items()
+                        if name in wanted
+                    }
+                    best_epoch = epoch
+        except BaseException:
+            restored = dict(model.state_dict())
+            restored.update(initial_state)
+            model.load_state_dict(restored, strict=True)
+            model.eval()
+            for param in model.parameters():
+                param.requires_grad_(False)
+            self.adapter = None
+            raise
+        merged = dict(model.state_dict())
+        merged.update(best_state)
+        model.load_state_dict(merged, strict=True)
+        model.eval()
+        for param in model.parameters():
+            param.requires_grad_(False)
+        self.adapter = {
+            "trainable_decoder_layers": trainable_decoder_layers,
+            "trainable_names": names,
+            "n_trainable": sum(param.numel() for param in params),
+            "n_total": sum(param.numel() for param in model.parameters()),
+            "epochs": epochs,
+            "best_epoch": best_epoch,
+            "selection": "highest validation ANLS" if val_checked else "final epoch (no validation split)",
+            "lr": lr,
+            "batch_size": batch_size,
+            "n_train": len(train_checked),
+            "n_val": len(val_checked),
+            "seed": seed,
+            "history": history,
+            "seconds": round(time.perf_counter() - started, 2),
+        }
+        return dict(self.adapter)
+
+    # ---- artifacts ---------------------------------------------------------------------------------
+
+    def save_artifact(self, output_dir: str | Path, metadata: Mapping[str, Any] | None = None) -> Path:
+        """Save the adapted decoder tensors as safetensors, bound to the pinned base digest."""
+        if self.adapter is None:
+            raise ValueError("nothing to save: call adapt() first")
+        model, _ = self._require_model()
+        from safetensors.torch import save_file
+
+        out = Path(output_dir)
+        out.mkdir(parents=True, exist_ok=True)
+        names = set(self.adapter["trainable_names"])
+        tensors = {
+            name: value.detach().cpu().contiguous()
+            for name, value in model.state_dict().items()
+            if name in names
+        }
+        weights_path = out / ARTIFACT_WEIGHTS_NAME
+        save_file(tensors, str(weights_path), metadata={"format": "pt"})
+        manifest = {
+            "format": ARTIFACT_FORMAT,
+            "format_version": ARTIFACT_FORMAT_VERSION,
+            "base_model": {
+                "id": MODEL_ID,
+                "revision": MODEL_REVISION,
+                "key": MODEL_KEY,
+                "weight_file": WEIGHT_FILE,
+                "weight_sha256": WEIGHT_SHA256,
+            },
+            "adapter": {
+                key: value
+                for key, value in self.adapter.items()
+                if key not in ("history", "trainable_names")
+            },
+            "history": self.adapter["history"],
+            "tensors": sorted(tensors),
+            "files": [
+                {
+                    "path": ARTIFACT_WEIGHTS_NAME,
+                    "bytes": weights_path.stat().st_size,
+                    "sha256": _sha256(weights_path),
+                }
+            ],
+            "metadata": dict(metadata or {}),
+        }
+        (out / ARTIFACT_MANIFEST_NAME).write_text(
+            json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8"
+        )
+        return out
+
+    def _check_artifact_manifest(self, root: Path, manifest: Mapping[str, Any]) -> Path:
+        if manifest.get("format") != ARTIFACT_FORMAT:
+            raise ValueError(f"artifact format {manifest.get('format')!r} != {ARTIFACT_FORMAT!r}")
+        if manifest.get("format_version") != ARTIFACT_FORMAT_VERSION:
+            raise ValueError(
+                f"artifact format_version {manifest.get('format_version')!r} is not "
+                f"{ARTIFACT_FORMAT_VERSION!r}"
+            )
+        base = manifest.get("base_model", {})
+        if (base.get("id"), base.get("revision"), base.get("weight_sha256")) != (
+            MODEL_ID,
+            MODEL_REVISION,
+            WEIGHT_SHA256,
+        ):
+            raise ValueError("artifact was adapted from a different base model, revision or weight file")
+        if base.get("weight_file") != WEIGHT_FILE:
+            raise ValueError("artifact was adapted from a different base weight file")
+        files = manifest.get("files")
+        if not isinstance(files, list) or len(files) != 1:
+            raise ValueError("artifact manifest must list exactly one file")
+        entry = files[0]
+        if not isinstance(entry, Mapping) or entry.get("path") != ARTIFACT_WEIGHTS_NAME:
+            raise ValueError(f"artifact manifest must name exactly {ARTIFACT_WEIGHTS_NAME!r}")
+        weights_path = (root / entry["path"]).resolve()
+        if weights_path.parent != root.resolve():
+            raise ValueError("artifact weight path must resolve inside the artifact directory")
+        adapter = manifest.get("adapter")
+        layers = adapter.get("trainable_decoder_layers") if isinstance(adapter, Mapping) else None
+        if isinstance(layers, bool) or not isinstance(layers, int) or not 1 <= layers <= DECODER_LAYERS:
+            raise ValueError("artifact manifest does not record valid trainable decoder layers")
+        if not isinstance(manifest.get("tensors"), list):
+            raise ValueError("artifact manifest must list its tensors")
+        return weights_path
+
+    def load_artifact(self, artifact_dir: str | Path) -> dict[str, Any]:
+        """Verify manifest, digest and exact tensor set before loading an adapter."""
+        root = Path(artifact_dir)
+        manifest = json.loads((root / ARTIFACT_MANIFEST_NAME).read_text(encoding="utf-8"))
+        weights_path = self._check_artifact_manifest(root, manifest)
+        entry = manifest["files"][0]
+        if not weights_path.is_file():
+            raise FileNotFoundError(f"artifact weights missing: {weights_path}")
+        if _sha256(weights_path) != entry["sha256"] or weights_path.stat().st_size != entry["bytes"]:
+            raise ValueError(f"{entry['path']}: digest or size mismatch; refusing to load")
+        expected = sorted(self._trainable_names(manifest["adapter"]["trainable_decoder_layers"]))
+        if sorted(manifest["tensors"]) != expected:
+            raise ValueError("artifact tensor list does not match its recorded configuration")
+        model, _ = self._require_model()
+        from safetensors.torch import load_file
+
+        tensors = load_file(str(weights_path))
+        if sorted(tensors) != expected:
+            raise ValueError("artifact tensor names differ from its manifest")
+        state = model.state_dict()
+        for key, value in tensors.items():
+            if key not in state or not key.startswith("decoder.layer."):
+                raise ValueError(f"artifact tensor {key} is not an adaptable decoder tensor")
+            if tuple(value.shape) != tuple(state[key].shape):
+                raise ValueError(
+                    f"artifact tensor {key} has shape {tuple(value.shape)}, "
+                    f"base has {tuple(state[key].shape)}"
+                )
+        merged = dict(state)
+        merged.update({key: value.to(state[key].dtype) for key, value in tensors.items()})
+        model.load_state_dict(merged, strict=True)
+        model.eval()
+        self.adapter = {
+            **manifest["adapter"],
+            "trainable_names": manifest["tensors"],
+            "history": manifest.get("history", []),
+        }
+        return manifest
+
+    @classmethod
+    def from_artifact(
+        cls,
+        artifact_dir: str | Path,
+        *,
+        device: str | None = None,
+        weights_dir: str | Path | None = None,
+        allow_download: bool = False,
+    ) -> Pix2StructDocVQAPipeline:
+        pipeline = cls.from_pretrained(
+            device=device,
+            weights_dir=weights_dir,
+            allow_download=allow_download,
+        )
+        pipeline.load_artifact(artifact_dir)
+        return pipeline
