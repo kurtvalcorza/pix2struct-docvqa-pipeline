@@ -40,7 +40,7 @@ The uses below are the ones the package was built to support; everything else is
 
 ###### Primary Intended Uses
 
-The task is extractive document question answering without OCR: input one page image (`PIL.Image.Image`, any mode, converted to RGB), one natural-language question (up to 256 characters) and a token budget; output one short answer string, the number of tokens generated and whether the budget was exhausted. Envisioned applications are field extraction from forms, invoices, receipts, letters and reports where the fields can be phrased as questions ("What is the invoice number?", "Who is the customer?"), triage of scanned business documents, and interactive lookup over a page the user is reading — with the answer checked against the page by a human or a downstream rule. Within DIMER the pipeline is an inference component and a zero-configuration baseline for document QA, not a certified extractor for any specific document family.
+The task is extractive document question answering without OCR: input one page image (`PIL.Image.Image`, any mode, converted to RGB), one natural-language question (up to 256 characters) and a token budget; output one short answer string, the number of tokens generated and whether the budget was exhausted. Envisioned applications are field extraction from forms, invoices, receipts, letters and reports where the fields can be phrased as questions ("What is the invoice number?", "Who is the customer?"), triage of scanned business documents, and interactive lookup over a page the user is reading — with the answer checked against the page by a human or a downstream rule. The pipeline is an inference component and a zero-configuration baseline for document QA, not a certified extractor for any specific document family.
 
 ###### Primary Intended Users
 
@@ -113,7 +113,7 @@ This pipeline is not intended for decisions in health, safety, criminal justice,
 
 ###### Use cases
 
-Prohibited even where the model would work: querying documents in order to extract personal data for surveillance, profiling, social scoring, or unlawful discrimination in employment, housing, credit, insurance, education, or healthcare access; processing documents the operator has no right to process, or paywalled and licence-restricted material in breach of its terms; deceptive uses that present generated answers as verified document facts or as evidence; and any use that violates the upstream Apache-2.0 licence terms, the DIMER deployment terms, or the consent and data-protection obligations attached to the documents processed. Autonomous high-consequence actions triggered by unreviewed answers are prohibited by the intended-use contract above.
+Prohibited even where the model would work: querying documents in order to extract personal data for surveillance, profiling, social scoring, or unlawful discrimination in employment, housing, credit, insurance, education, or healthcare access; processing documents the operator has no right to process, or paywalled and licence-restricted material in breach of its terms; deceptive uses that present generated answers as verified document facts or as evidence; and any use that violates the upstream Apache-2.0 licence terms, the terms of the deployment that runs the pipeline, or the consent and data-protection obligations attached to the documents processed. Autonomous high-consequence actions triggered by unreviewed answers are prohibited by the intended-use contract above.
 
 ## Immutable provenance
 
