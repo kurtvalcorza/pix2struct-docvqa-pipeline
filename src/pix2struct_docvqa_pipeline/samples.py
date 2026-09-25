@@ -36,13 +36,13 @@ _CITIES = ("Manila", "Cebu", "Davao", "Baguio", "Iloilo", "Quezon City")
 _CONTACTS = ("Ana Reyes", "Miguel Santos", "Lea Cruz", "Paolo Lim", "Maya Flores")
 
 
-def _sha256(data: bytes) -> str:
+def _sha256_bytes(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
 def image_digest(image: Image.Image) -> str:
     rgb = image.convert("RGB")
-    return _sha256(f"{rgb.width}x{rgb.height}:".encode() + rgb.tobytes())
+    return _sha256_bytes(f"{rgb.width}x{rgb.height}:".encode() + rgb.tobytes())
 
 
 def dataset_digest(records: Sequence[Mapping[str, Any]]) -> str:
@@ -50,7 +50,7 @@ def dataset_digest(records: Sequence[Mapping[str, Any]]) -> str:
         f"{r['id']}:{r['document_id']}:{image_digest(r['image'])}:{r['question']}:{'|'.join(r['answers'])}"
         for r in records
     )
-    return _sha256("\n".join(parts).encode())
+    return _sha256_bytes("\n".join(parts).encode())
 
 
 def _font(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
