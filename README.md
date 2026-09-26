@@ -59,7 +59,7 @@ weights/pix2struct-docvqa-base/
 
 ## Release status
 
-**Candidate.** Static/unit checks and notebook compilation do not constitute clean-runtime evidence. The E2E carrier has not been executed locally, in accordance with the GPU-only verification boundary; its exact committed SHA and notebook blob must pass the serial Kaggle Tesla T4 suite before promotion.
+**Release-grade** for the exact E2E carrier recorded in `docs/release-verification.md`: commit `2602e66` / notebook blob `078435c42445` executed top-to-bottom on Kaggle Tesla T4 on 2026-09-26 UTC (10/10 post-restart code cells, 393.2 s). On the default synthetic 30-row held-out split, frozen and adapted ANLS were both 1.0 (majority baseline 0.2949), so this sample shows no adaptation gain; reload parity was 8/8. One seeded synthetic split on one runtime, not a DocVQA benchmark. Static/unit checks and notebook compilation remain source checks only; any change to the notebook blob returns it to Candidate until a new exact-blob run is recorded.
 
 ## Documentation
 
