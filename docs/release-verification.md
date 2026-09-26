@@ -1,141 +1,39 @@
 # Release verification
 
-`tutorials/pix2struct_docvqa_colab.ipynb` (`TASK-INFERENCE`, **standalone** carrier) is a
-**release candidate** until the exact notebook revision has executed top-to-bottom in a clean
-supported runtime. Unit tests, JSON validation, code-cell compilation, the generator parity checks
-and `tools/validate_release_assets.py` are necessary checks but are **not** runtime evidence under
-DIMER Notebook Specification 2.0. This file is the durable release-gate record for the notebook.
+`tutorials/pix2struct_docvqa_colab.ipynb` is a standalone `E2E` carrier that is **Release-grade** for the exact commit and notebook blob recorded below, and returns to **Candidate** whenever the blob changes, until that exact blob executes top-to-bottom in a clean supported runtime. Static checks, unit tests, code-cell compilation, and generator parity are necessary but are not runtime evidence.
 
-## Automatic coverage (static, every pull request)
+## Automatic source coverage
 
-CI runs `tools/validate_release_assets.py`, which checks:
+CI and local pre-flight must verify:
 
-- notebook JSON parses; every code cell compiles as plain Python (no `%`/`!` magics); no
-  persisted outputs or execution counts; no unresolved placeholder markers; every code cell
-  is preceded by an explanatory markdown cell;
-- exactly one tutorial notebook, named in `tutorials/README.md` with its `TASK-INFERENCE`
-  profile, the notebook-spec version and the standalone carrier; `metadata.dimer` declares that
-  profile, spec `2.0`, a pedagogical mode, `standalone: true` and `generated_from` (repository, revision, module
-  SHA-256, generator);
-- the standalone carrier (ST1–ST6, PAR1–PAR3): no clone, repository install or repository import on
-  the primary path; exactly one cell tagged `embedded_module` equal to
-  `src/pix2struct_docvqa_pipeline/pipeline.py` after the generator's documented rewrites; the
-  inline `MANIFEST` equal to the committed snapshot manifest and the inline `PINS` equal to the
-  `pyproject.toml` runtime pins; the notebook byte-identical (on LF) to `tools/build_notebook.py`
-  output for its recorded revision; the pinned-install cell with its restart-on-stale-import guard;
-  `NOTEBOOK_SOURCE` recorded in exports;
-- `MODEL_ID`/`MODEL_REVISION` are bound only in the carried module cell (and repeated in the inline
-  manifest, which the notebook asserts against the module before fetching), the revision is a 40-hex
-  immutable commit, and the same identity string appears in `README.md`, `MODEL_CARD.md`, and
-  `docs/WEIGHTS.md` with no stray revisions;
-- the profile-specific public-API calls (`stage_missing_files`, `verify_snapshot`,
-  `Pix2StructDocVQAPipeline.from_pretrained(weights_dir=...)`, `validate_inputs`, `answer`,
-  `evaluation_report`), the ceiling print (`MIN_IMAGE_SIDE`, `MAX_IMAGE_SIDE`, `MAX_PATCHES`,
-  `MAX_QUESTION_CHARS`, `MAX_NEW_TOKENS`, `DEFAULT_MAX_NEW_TOKENS`, `DECODING`), the exports, the
-  learner-facing statements (caller-owned token budget, no score in generated text, the `truncated` flag,
-  no DocVQA benchmark, ANLS as sanity check, the model answers any question about any image, capability
-  exclusions) and the gated-off BYOD default listed in the validator; forbidden patterns (credential-in-URL,
-  any `git clone` / `github.com` / repository import on the primary path, a mutable `revision='main'`,
-  direct `from transformers import` / `Pix2StructForConditionalGeneration` / `Pix2StructProcessor` /
-  `header_text=` / `model.generate(` / `from huggingface_hub import` use **outside the carried module
-  cell**, `trust_remote_code=True`, `pickle.load`, `torch.load(`, `extractall(`);
-- `STATUS.md`, `README.md` and `tutorials/README.md` agree on one release-status token and no
-  document makes an unsupported release-grade, production-readiness or benchmark claim;
-- `MODEL_CARD.md` front matter (`model_card_spec: "1.1"`), single H1, required heading order, and
-  immutable provenance.
+- all three carried modules match `src/pix2struct_docvqa_pipeline/` after only documented standalone rewrites;
+- the inline model manifest equals the committed eight-file manifest for `google/pix2struct-docvqa-base` at `63f6b3de436e39f75c7a486881a9c2c14a7f4e89`;
+- runtime dependencies are exact pins, the notebook has no repository dependency, every code cell compiles, and no outputs or execution counts are committed;
+- corpus generation reproduces `SAMPLE_DIGEST`, train/validation/test documents are disjoint, and duplicate-id and leakage probes are refused;
+- the notebook calls the public baseline, frozen evaluation, adaptation, held-out evaluation, artifact export, fresh reload, and answer-parity paths;
+- `tools/validate_release_assets.py`, `python tools/build_notebook.py --check`, `ruff check src tests tools`, and `pytest -q -o addopts= tests` pass.
 
-CI also installs the pinned CPU-only torch wheel plus `transformers`, `safetensors`, `numpy` and
-`pillow`, runs `ruff check src tests tools`, `tools/build_notebook.py --check`, and the offline unit
-suite (`tests/test_pipeline.py`, `tests/test_role_helpers.py`, `tests/test_notebook_parity.py`;
-injected runner, no weights). These are source/provenance and unit checks. They are **not** execution
-evidence.
+## Clean-runtime gate
 
-## Executor paths
+The serial Kaggle GPU suite must:
 
-| Path | Runtime | Role |
-|---|---|---|
-| Google Colab (supported user path) | Colab CPU runtime (CUDA used automatically when present) | The runtime the tutorial is written for; a clean top-to-bottom run here is promotion evidence |
-| Kaggle CLI kernel | Kaggle CPU kernel, Python 3.12 image | Reproducible clean-room executor of the same class; the notebook is pushed verbatim plus one leading shim cell that provides `google.colab` and chdirs to a scratch directory (**no repository checkout is needed — the notebook is standalone**) |
-| Local Windows-venv harness (pre-flight only) | Workstation, sequential cell executor with a `google.colab` shim, `CUDA_VISIBLE_DEVICES=-1` | Builder pre-flight to catch defects before spending cloud runs; **not** a supported runtime and not promotion evidence |
+1. resolve a pushed 40-character commit SHA and notebook blob SHA before submission;
+2. use a fresh Kaggle kernel with Internet enabled and an explicit Tesla T4 accelerator;
+3. execute the committed notebook verbatim, allowing only the executor shim required by the suite;
+4. confirm the notebook records the same source revision and uses the embedded immutable model manifest;
+5. confirm all ten code cells complete after any required dependency-install restart;
+6. retain the input manifest, comparison metrics, training history, predictions CSV, adapter manifest and weights, and 8/8 reload parity;
+7. report runtime identity, wall time, staged files/bytes, and any warnings or retries.
 
-## Supported release verification procedure
-
-Before changing the registry status from `Candidate` to `Release-grade`:
-
-1. resolve the exact PR/commit head under review and confirm static CI is green;
-2. open that exact notebook revision in a new CPU (or CUDA) runtime (Colab, or the Kaggle
-   executor above) with **no repository checkout** and a clean model cache;
-3. run the notebook top-to-bottom without editing implementation cells (form parameters at their
-   defaults for the sample path: `USE_BYOD = False`, `max_new_tokens = 32`);
-4. verify that Section 1 reports `NOTEBOOK_SOURCE.repository_revision` equal to the revision recorded
-   in `metadata.dimer.generated_from` and that the installed core package versions equal the inline
-   `PINS` (= `pyproject.toml`);
-5. verify every default-path stage completes:
-   - pinned runtime installed from the inline `PINS` with no GitHub access;
-   - the carried module cell executes (defines `Pix2StructDocVQAPipeline`, `validate_inputs`,
-     `evaluation_report`, `anls`, `exact_match`, `header_font_bytes`, `verify_snapshot`,
-     `stage_missing_files`) with no import of the repository package;
-   - synthetic 850×1100 invoice-style form rendered in code with its RGB SHA-256 printed and the ceilings
-     (`MIN_IMAGE_SIDE` 16, `MAX_IMAGE_SIDE` 4096, `MAX_PATCHES` 2048, `MAX_QUESTION_CHARS` 256,
-     `MAX_NEW_TOKENS` 128, `DEFAULT_MAX_NEW_TOKENS` 32, `DECODING` greedy) surfaced;
-   - pinned `google/pix2struct-docvqa-base` acquisition at the immutable revision through the carried
-     module: the inline `MANIFEST` is asserted against the module identity and written to
-     `weights/pix2struct-docvqa-base/`, `stage_missing_files(WEIGHTS_DIR, allow_download=True)` reports
-     all 8 manifest entries on a clean runtime, `verify_snapshot` returns its summary dict, and
-     `from_pretrained(weights_dir=WEIGHTS_DIR)` loads from the verified directory — with **no font download**
-     (the carried module supplies Pillow's bundled font; a `ybelkada/fonts` fetch in the logs is a finding);
-   - `validate_inputs` writes `outputs/pix2struct_docvqa_input_manifest.json` (verdict `accepted`, five
-     checked questions, one recorded rejection finding from the blank-question probe);
-   - `answer` returning one answer per question with `truncated` false on the default budget; record the
-     answers (the card-pass CPU smoke answered all five authored questions exactly — `NW-2026-0417`,
-     `Blue Yonder Airlines`, `$1,099.20`, `11 April 2026`, `40`; a materially different result is a
-     finding to record, not a failure by itself, because no metric is asserted — greedy decoding on a
-     different device can diverge);
-   - `evaluation_report` writes `outputs/pix2struct_docvqa_evaluation_report.json` with verdict
-     `sample-sanity`, an `anls` entry, an `exact_match` entry and five per-question entries on the
-     synthetic sample (`not-measurable` on BYOD), stated as such;
-   - `outputs/pix2struct_docvqa_result.json`, `outputs/pix2struct_docvqa_answers.csv` and
-     `outputs/pix2struct_docvqa_annotated.png` written with `NOTEBOOK_SOURCE`, model revision, model
-     licence, runtime versions and device;
-6. verify the exports exist and the interpretation section matches the observed path;
-7. record the notebook Git blob id, commit, runtime (platform, Python, PyTorch, Transformers, device),
-   model identifier and immutable revision, whether the model cache was clean, outcome, produced
-   outputs, and any warning or applicable `SHOULD` deviation in the table below;
-8. record no access tokens or other secrets.
-
-A known-failing default path in the supported runtime blocks release.
+A run may pass structurally even if adapted held-out metrics regress; the negative delta must remain in the evidence. Promotion requires successful completion and faithful evidence, not a preselected metric gain.
 
 ## Recorded executions
 
-Notebook identity is the Git blob id of `tutorials/pix2struct_docvqa_colab.ipynb` (verify with
-`git rev-parse <commit>:tutorials/pix2struct_docvqa_colab.ipynb`). Wall times, when recorded,
-are the sum of per-cell times reported by the executor and include installs and the model download;
-they are measurements for the stated runtime, not general estimates.
+| Notebook | Source SHA / blob | Date | Runtime | Result |
+|---|---|---|---|---|
+| `pix2struct_docvqa_colab.ipynb` (`E2E`) | `2602e66` / `078435c42445` (notebook `NOTEBOOK_SOURCE.repository_revision` `8a43e98`, the source revision the notebook was bound to; `8a43e98..2602e66` changes only the notebook; embedded `module_sha256` `f41e4c163285…`) | 2026-09-26 (03:22–03:29 UTC) | Kaggle Tesla T4 (`kurtvalcorza/dimer-nb2-pix2struct-docvqa` v3), serial suite, `USE_BYOD = False`, sample-path defaults; blob fetched at the 40-char SHA and Git-blob verified; HF cache clean at start | **PASSED** — 393.2 s wall (pass 1 181.1 s stopped at the install cell with a pip dependency-resolver `CellExecutionError` and the notebook's stale-module guard (`cuda-bindings` 12.9.4 → 13.4.3, `numpy` 2.0.2 → 2.5.3), kernel restarted after the install cell; pass 2 212.1 s), 10/10 post-restart code cells ok; image `gcr.io/kaggle-gpu-images/python@sha256:37c64f7dd9c54116ecd1bcc88817c5469b88387388fade02bfa8bf3fc647d461` (image torch 2.10.0+cu128, transformers 5.0.0, pillow 11.3.0), Python 3.12.13, Tesla T4 15360 MiB, driver 580.159.04; after the inline pins: torch 2.14.0+cu130 (CUDA 13.0), transformers 4.57.6, pillow 11.3.0, device `cuda:0`, float32; staged 18 files / 1133 MB (8 manifest files at `63f6b3de436e39f75c7a486881a9c2c14a7f4e89`, 1,133,308,924 B, all size- and SHA-256-verified, incl. `model.safetensors` 1,129,177,976 B); synthetic corpus digest `b9e7b0b27ae120979c988da745c8d0324de4267925f8c53b7a2f7f66317a438a` equal to the pinned `SAMPLE_DIGEST` on Kaggle's Pillow 11.3.0, split 72 / 18 / 30 rows, document-disjoint; duplicate-id and document-leakage probes refused; trainable 18,878,976 of 282,285,696 parameters (final two decoder blocks), 2 epochs, lr 0.0002, batch 1, seed 0, best epoch 1 by validation ANLS (validation n = 18: frozen ANLS 0.9815 / EM 0.9444; epoch 1 ANLS 1.0 / EM 1.0, train loss 0.2374; epoch 2 ANLS 1.0 / EM 1.0, train loss 0.2676), adaptation 94.7 s; held-out test (30 rows, `max_new_tokens` 32): ANLS empty 0.0 / majority 0.2949 / frozen 1.0 / adapted 1.0; exact match 0.0 / 0.0 / 1.0 / 1.0; delta vs frozen ANLS 0.0, exact match 0.0 (the frozen model already answers every synthetic test question exactly, so this sample cannot show an adaptation gain); frozen evaluation 21.222 s, adapted 19.596 s; `adapter.safetensors` 75,519,448 B sha256 `b8b49eccff0e8b754e71de9f7fd07644b98f6791255cd418c517338efa09be5c`, fresh reload answer parity 8/8 identical; preserved output sha256: `pix2struct_docvqa_result.json` `97ef8f96d996…`, `pix2struct_docvqa_predictions.csv` `a17e155b79fa…`, `pix2struct_docvqa_input_manifest.json` `5afd17338c84…`, adapter `manifest.json` `cab0afb91132…`; no warnings in cell stderr. One seeded synthetic split, one runtime, no dispersion estimate |
+| Superseded `E2E` attempt | `14f2cbd` / `285a26d12034` | 2026-09-26 | Kaggle Tesla T4 (`kurtvalcorza/dimer-nb2-pix2struct-docvqa` v2) | **FAILED** — 227.9 s, 4/10 code cells ok after the install restart; model-staging cell 11 raised `TypeError: object supporting the buffer API required` because the standalone notebook's embedded `samples._sha256` shadowed `pipeline._sha256`; fixed by the rename in `8a43e98` and the regenerated notebook in `2602e66`. Not evidence for the current blob |
 
-### Local pre-flight evidence (not a supported runtime)
+## Promotion rule
 
-| Date (UTC) | Commit / notebook blob | Executor | Path exercised | Wall | Outcome |
-|---|---|---|---|---|---|
-| 2026-09-14 | notebook blob `6ccd8bcae179` (commit `cc56800`, generated at `71f3e9b`; `NOTEBOOK_SOURCE.repository_revision` = `71f3e9b…`) | Local Windows-venv harness (`run_nb_local.py`: nbclient 0.11.0, fresh `python3` kernel, `CUDA_VISIBLE_DEVICES=-1`, `DIMER_NOTEBOOK_CI_PREINSTALLED=1`), Python 3.12.10, torch 2.14.0+cu130, transformers 4.57.6 | Default synthetic path, all 8 code cells: pinned install skipped (pre-installed), `stage_missing_files` fetched all 8 manifest entries (1.13 GB) from the Hub cache at the pinned revision into the scratch `weights/`, `verify_snapshot` PASS (8 files), no font download in the log, five `answer` calls → `NW-2026-0417`, `Blue Yonder Airlines`, `$1,099.20`, `11 April 2026`, `40` (4–12 tokens, none truncated), `evaluation_report` `sample-sanity` (`anls` 1.0, `exact_match` 1.0), 5 outputs written | 125.9 s | PASS — pre-flight only; not promotion evidence |
-
-### Manual clean-runtime evidence
-
-| Date (UTC) | Commit / notebook blob | Executor | Path exercised | Wall | Outcome |
-|---|---|---|---|---|---|
-| 2026-09-14 | `1615315` / `ae95904f48bf` | Kaggle CPU (`kurtvalcorza/dimer-nb2-pix2struct-docvqa` v1) | Default sample path | 296.2 s | **PASSED** — 8/8 ok code cells executed cleanly, 18 files, 1133 MB staged |
-
-## Current status
-
-No clean-runtime execution in a **supported** runtime (Colab or Kaggle) has been recorded yet; clean execution evidence is now recorded below. What exists: static validation (`tools/validate_release_assets.py`), the generator parity
-checks (`--check` OK), the offline unit suite, and one **local fresh-kernel execution** of the generated
-notebook (table above) that exercised the standalone carrier, the real `hf_hub_download` staging path
-into an empty `weights/` directory, verification, answering, the evaluation report and every export —
-which is necessary but not promotion evidence because the workstation is not a supported runtime. The
-registry status remains **Candidate** until a reviewer confirms a recorded supported-runtime run against
-the notebook blob under review and an integrator promotes it. Facts a reviewer should weigh: the CUDA
-path has not been executed; the question header is rendered with Pillow's bundled Aileron font rather
-than the Arial the upstream processor downloads (deliberate, to keep the notebook offline and
-licence-clean — the smoke run still scored 5/5, but the glyph difference is untested beyond that page);
-on a blank 4096×4096 page the model answered `51759 7951` to "What is the invoice number?", so an
-unanswerable question yields a fluent invented answer with no signal; and each question costs a full
-encoder pass (~2.3–3.0 s on the reference CPU), so a long question list scales linearly.
+The current carrier holds **Release-grade** for commit `2602e66` / notebook blob `078435c42445` on the passing clean run recorded above; the measured values are one seeded synthetic split on one runtime, not a DocVQA benchmark. Keep **Candidate** for any carrier whose exact blob has no passing clean-run row. A later change to any carried module, notebook template, dependency pin, manifest, or generated notebook creates a new blob and invalidates the prior runtime evidence. Promotion updates this file, `STATUS.md`, `README.md`, and `tutorials/README.md` in one evidence-only commit; merge remains an explicit maintainer action.

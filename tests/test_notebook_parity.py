@@ -1,7 +1,7 @@
 """NOTEBOOK_SPEC 2.0 parity tests (PAR1–PAR3) for the standalone tutorial notebook.
 
-The notebook carries `src/<package>/pipeline.py` verbatim; these tests fail whenever the carried
-cell, the inline manifest, or the inline pins diverge from the repository at HEAD.
+The notebook carries the declared package modules; these tests fail whenever a carried cell,
+the inline manifest, or the inline pins diverge from the repository at HEAD.
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ def _load(name: str):
 build = _load("build_notebook")
 TEMPLATE = _load("notebook_template").TEMPLATE
 NOTEBOOK = ROOT / "tutorials" / TEMPLATE["notebook_name"]
-MODULE = ROOT / "src" / TEMPLATE["package"] / "pipeline.py"
+PKG_DIR = ROOT / "src" / TEMPLATE["package"]
 MANIFEST = ROOT / "weights" / TEMPLATE["weights_key"] / "dimer-base-manifest.json"
 
 
@@ -48,29 +48,47 @@ def _source(cell: dict) -> str:
     return "".join(src) if isinstance(src, list) else src
 
 
-def test_par1_embedded_module_equals_repository_module(notebook: dict) -> None:
+def test_par1_embedded_modules_equal_repository_modules(notebook: dict) -> None:
     tagged = [
         c for c in _cells(notebook, "code") if c.get("metadata", {}).get("dimer", {}).get("embedded_module")
     ]
-    assert len(tagged) == 1, "exactly one cell must be tagged metadata.dimer.embedded_module"
-    cell = tagged[0]
-    assert cell["metadata"]["dimer"]["embedded_module"] == f"src/{TEMPLATE['package']}/pipeline.py"
-    expected = build.apply_rewrites(MODULE.read_text(encoding="utf-8"), REWRITES)
-    drifted = "embedded module drifted from src/; regenerate the notebook"
-    assert _source(cell).rstrip("\n") + "\n" == expected, drifted
+    recorded = notebook["metadata"]["dimer"]["generated_from"]["revision"]
+    context = build.load_context(ROOT, TEMPLATE, recorded)
+    assert [cell["metadata"]["dimer"]["embedded_module"] for cell in tagged] == context[
+        "module_rels"
+    ]
+    for cell, module, relative in zip(
+        tagged, context["modules"], context["module_rels"], strict=True
+    ):
+        assert cell["metadata"]["dimer"]["module_sha256"] == context["per_module_sha256"][relative]
+        drifted = f"embedded module {relative} drifted; regenerate the notebook"
+        assert _source(cell).rstrip("\n") + "\n" == context["embedded"][module], drifted
 
 
 REWRITES = TEMPLATE.get("rewrites", build.REWRITES)  # a template may declare its own rules (generator /2)
 
 
 def test_par1_rewrite_rules_are_the_only_difference() -> None:
-    module = MODULE.read_text(encoding="utf-8")
-    rewritten = build.apply_rewrites(module, REWRITES)
-    diff = [(a, b) for a, b in zip(module.splitlines(), rewritten.splitlines(), strict=True) if a != b]
-    assert len(diff) == len(REWRITES)
-    for original, replaced in diff:
-        assert "__file__" in original, original
-        assert "__file__" not in replaced and "standalone rewrite" in replaced, replaced
+    import difflib
+
+    context = build.load_context(ROOT, TEMPLATE)
+    rule_hits = 0
+    for module, original in context["texts"].items():
+        before = original.splitlines()
+        after = context["embedded"][module].splitlines()
+        for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(
+            a=before, b=after, autojunk=False
+        ).get_opcodes():
+            if tag == "equal":
+                continue
+            replaced = after[j1:j2]
+            assert replaced and all("standalone rewrite" in line for line in replaced), (
+                module,
+                before[i1:i2],
+                replaced,
+            )
+            rule_hits += sum("__file__" in line for line in before[i1:i2])
+    assert rule_hits == len(REWRITES)
 
 
 def test_par2_inline_manifest_and_pins_match_repository(notebook: dict) -> None:
