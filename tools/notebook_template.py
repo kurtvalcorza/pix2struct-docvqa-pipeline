@@ -9,12 +9,26 @@ TEMPLATE = {
     "notebook_name": "pix2struct_docvqa_colab.ipynb",
     "profile": "E2E",
     "mode": "GUIDED",
+    "isolated_runtime": True,
+    "infrastructure_labels": True,
+    # The fleet's uv isolated-environment mechanism (generator /2.2): managed CPython, a
+    # size- and SHA-256-verified uv wheel, and a lock compiled from the pyproject pins with
+    # `uv pip compile pyproject.toml --python-version 3.12 --python-platform x86_64-manylinux_2_28 --generate-hashes
+    # --only-binary :all: -o tutorials/requirements-colab.lock.txt`.
+    "managed_python": "3.12.12",
+    "uv": {
+        "version": "0.12.15",
+        "url": "https://files.pythonhosted.org/packages/1e/fd/432451d732917c49152a291de3ef171aa6b0f1a22d39780fb2c1f085ca4c/uv-0.12.15-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+        "bytes": 20081404,
+        "sha256": "aee9802f46bae436bd91751bb33ddeb379ef1596b5c19df193219d545d244b60",
+    },
+    "lock": "tutorials/requirements-colab.lock.txt",
     "pipeline_class": "Pix2StructDocVQAPipeline",
     "weights_key": "pix2struct-docvqa-base",
     "modules": ["pipeline.py", "metrics.py", "samples.py"],
     "runtime_imports": ["torch", "transformers"],
     "run_all": (
-        "Selecting **Run all** in a fresh supported GPU runtime installs the pinned dependencies, carries the three "
+        "Selecting **Run all** in a fresh supported GPU runtime builds an isolated hash-locked environment from the pinned dependencies (nothing is installed into the notebook kernel, so no restart is needed), carries the three "
         "repository modules without cloning the repository, stages and digest-verifies the immutable model snapshot, "
         "builds and validates the deterministic synthetic corpus, records two non-neural baselines and the frozen model, "
         "fine-tunes only the final two decoder blocks with validation-ANLS epoch selection, evaluates held-out documents, "
@@ -22,7 +36,7 @@ TEMPLATE = {
         "and writes machine-readable evidence. CUDA is required; no credential or upload is needed."
     ),
     "byod": (
-        "After the default sample completes, set `USE_BYOD = True` and upload one zip containing `records.csv` plus its "
+        "After the default sample completes, set `USE_BYOD = True` and `BYOD_PATH` (a zip already in the runtime; on Colab an empty path opens an upload dialog) for one zip containing `records.csv` plus its "
         "page images. CSV columns are `id,document_id,file,question,answers`; separate accepted answers with `|`. The same "
         "validation and document-grouped split apply. BYOD is optional and remains inside the hosted runtime."
     ),
@@ -54,6 +68,9 @@ TEMPLATE = {
         "set is used only for frozen/adapted comparison. This carrier remains Candidate until its exact committed blob passes "
         "a clean supported GPU run."
     ),
+    "guided": {"opening": [(
+        "**Who this notebook is for.** A learner who knows basic Python, has used Colab or Kaggle with a GPU and has met train/validation/test splits, and wants to see how an OCR-free document question-answering model reads a page image, how its answers are scored (ANLS and exact match) against simple baselines, and how a small part of it is fine-tuned and exported without fooling themselves. The audience is students and practitioners preparing their own document-QA data; no prior experience with Pix2Struct or fine-tuning is assumed — each term is explained where it first matters and again in the **Glossary**. A CUDA GPU is required (a T4 is enough).\n\n**Input → Model → Output.**\n\n| | |\n|---|---|\n| Input | page images with a question and one or more accepted answers: 40 generated invoice-like documents, 120 questions (72 train, 18 validation, 30 test rows, split by document) or your own zip |\n| Model | Pix2Struct DocVQA-base: the question is rendered above the page, the composite is encoded as at most 2,048 patches, and a decoder generates the answer; only decoder blocks 10 and 11 are trained |\n| Output | a short answer per question, held-out ANLS and exact match beside an empty and a majority-answer baseline, and a safetensors adapter that reloads with identical answers |\n\n**How to use this notebook.** Choose **Runtime → Change runtime type → T4 GPU**, then **Runtime → Run all**. Run all completes in one pass: Section 1 installs nothing into the notebook's own Python, so no restart is needed (the recorded hosted run of the previous version needed one; this version removes it). Sections 1–3 are **infrastructure** — the isolated environment, the carried modules and the verified snapshot — and their cells are collapsed; you may run them without studying them. The learning path starts in Section 4. Form fields (`# @param`) are the only values meant to be edited. Before each principal result the notebook asks you to **Predict**; after it comes a collapsible **Check your reasoning** with a worked answer from the recorded Kaggle T4 run of 26 September 2026. **Troubleshooting**, a **Glossary** and a **Conclusion** template are at the end. Writing your predictions down is optional.\n\n**Roadmap:** 1–3 infrastructure → 4 the corpus, validation and a document-level split *(evaluation practice: leakage)* → 5 two baselines and the frozen model *(core concept: ANLS)* → 6 bounded adaptation of two decoder blocks *(core concept: what is trained)* → 7 held-out comparison *(evaluation practice: a saturated sample)* → 8 export, free, reload and answer parity *(engineering)* → conclude."
+    )]},
     "learning_objectives": (
         "verify immutable model and corpus identities; inspect record and split contracts; compare empty-answer and "
         "training-majority baselines with the frozen model; run bounded decoder adaptation; interpret ANLS and exact match as "
@@ -65,7 +82,8 @@ TEMPLATE = {
         "corpus tests a narrow invoice-like domain and cannot establish real-scan performance."
     ),
     "prerequisites": [
-        "- **Runtime:** a fresh Google Colab or Kaggle-style Python 3.12 runtime with a CUDA GPU. The notebook refuses CPU for adaptation. The pinned checkpoint is about 1.13 GB and is downloaded at its immutable revision, then checked against the embedded manifest.",
+        '- **Learner:** basic Python and Colab or Kaggle familiarity; no prior experience with Pix2Struct or fine-tuning. ANLS, exact match, baselines, document-level splits and adapters are explained where they are first used and again in the Glossary.',
+        "- **Runtime:** a fresh Google Colab or Kaggle **Linux x86_64** runtime with a CUDA GPU; Section 1 builds its own Python 3.12.12 environment from a hash-locked list of manylinux wheels, so nothing is installed into the kernel and no restart is needed. The notebook refuses CPU for adaptation. The pinned checkpoint is about 1.13 GB and is downloaded at its immutable revision, then checked against the embedded manifest.",
         "- **Knowledge:** Python, supervised train/validation/test splits, autoregressive generation, and why held-out ANLS is not a confidence score.",
         "- **Data:** the default path generates 40 fictional documents and 120 question rows in code under CC0-1.0: 72 train, 18 validation and 30 held-out test rows. Optional BYOD must contain only documents you are authorized to process. Do not upload confidential or restricted data to a hosted notebook.",
     ],
@@ -76,20 +94,42 @@ TEMPLATE = {
                 "The default corpus has three questions per document and fixed document-level splits. `validate_dataset` checks "
                 "every id, decoded image, question and accepted answer; `check_split_disjoint` refuses leakage. The aggregate "
                 "digest must equal `SAMPLE_DIGEST`. Two refusal probes demonstrate duplicate-id and cross-split rejection."
+                '\n\n**Predict before running:** why split by document instead of by question? How many train, validation and test rows will the 120 questions give?'
             ),
             "code": (
                 "import json\n"
                 "import os\n"
                 "from pathlib import Path\n\n"
                 "USE_BYOD = False  # @param {{type:\"boolean\"}}\n"
+                "BYOD_PATH = ''  # @param {{type:\"string\"}}\n"
                 "SPLIT_SEED = 42\n"
-                "os.makedirs('outputs', exist_ok=True)\n\n"
+                "os.makedirs('outputs', exist_ok=True)\n\n\n"
+                'def byod_file(path, kind, suffixes=()):\n'
+                '    """BYOD path first (works on Colab, Kaggle and Jupyter); on Colab an empty path opens the upload dialog."""\n'
+                '    if str(path).strip():\n'
+                '        source = Path(str(path).strip()).expanduser()\n'
+                '        if not source.is_file():\n'
+                "            raise FileNotFoundError(f'BYOD path {{str(source)!r}} does not exist or is not a file (relative paths start at {{os.getcwd()}}); give the path of one {{kind}}.')\n"
+                '    else:\n'
+                '        try:\n'
+                '            from google.colab import files\n'
+                '        except ImportError:\n'
+                "            raise RuntimeError(f'BYOD is on but its path field is empty, and the upload dialog exists only in Google Colab: copy the {{kind}} into this runtime (or attach it as a Kaggle dataset) and set the path field.') from None\n"
+                '        uploaded = files.upload()\n'
+                '        if len(uploaded) != 1:\n'
+                "            raise ValueError(f'Upload exactly one {{kind}} (received {{len(uploaded)}} files; a cancelled dialog sends none). Run this cell again.')\n"
+                '        name, payload = next(iter(uploaded.items()))\n'
+                "        source = Path('work') / Path(name).name\n"
+                '        source.parent.mkdir(parents=True, exist_ok=True)\n'
+                '        source.write_bytes(payload)\n'
+                '    if suffixes and not source.name.lower().endswith(tuple(suffixes)):\n'
+                '        raise ValueError(f\'{{source.name}}: expected a {{kind}} ending in {{" or ".join(suffixes)}}.\')\n'
+                '    return source\n'
+                '\n'
+                '\n'
                 "if USE_BYOD:\n"
-                "    from google.colab import files\n"
-                "    uploaded = files.upload()\n"
-                "    upload_name = next(iter(uploaded))\n"
-                "    Path(upload_name).write_bytes(uploaded[upload_name])\n"
-                "    records = load_byod_dataset(upload_name)\n"
+                "    byod_zip = byod_file(BYOD_PATH, 'zip with records.csv and page images', ('.zip',))\n"
+                "    records = load_byod_dataset(str(byod_zip))\n"
                 "    splits = split_dataset(records, seed=SPLIT_SEED)\n"
                 "    data_source = 'BYOD'\n"
                 "else:\n"
@@ -119,16 +159,35 @@ TEMPLATE = {
         },
         {
             "md": (
+                '<details><summary>Check your reasoning</summary>Three questions about the same invoice share its layout and values, so a question-level split would let the model see a test document in training. The recorded run split 72 / 18 / 30 rows with no document shared; the corpus digest matched `SAMPLE_DIGEST`, and both refusal probes (duplicate id, document leakage) were rejected.</details>'
+            ),
+        },
+        {
+            "md": (
                 "## 5. Record non-neural baselines and the frozen model\n\n"
                 "The empty baseline proves the scorer's zero floor. The majority baseline ignores page and question and uses "
                 "one training-only answer. The frozen checkpoint is evaluated before any update. ANLS gives partial credit only "
                 "at normalized similarity 0.5 or above; exact match is stricter. These are one-split point estimates."
+                '\n\n**Predict before running:** what ANLS will the empty answer and the majority answer score, and how close to 1.0 will the frozen model be on these clean synthetic invoices?'
             ),
             "code": (
                 "import torch\n\n"
                 "if not torch.cuda.is_available():\n"
                 "    raise RuntimeError('The E2E default path requires a CUDA GPU; use a supported GPU runtime.')\n"
                 "gpu_name = torch.cuda.get_device_name(0)\n"
+                '# SWP-F: adapt() trains decoder blocks 10-11 of `pipe` in place, and Section 8 frees `pipe`. If this pipeline was\n'
+                '# already adapted or freed (a re-run), start again from the pinned, digest-verified snapshot, so the frozen scores and\n'
+                '# every new adaptation begin from the frozen weights they are labelled with.\n'
+                "if globals().get('pipe') is None or pipe.adapter is not None:\n"
+                '    import gc\n'
+                '\n'
+                '    pipe = None\n'
+                '    gc.collect()\n'
+                '    if torch.cuda.is_available():\n'
+                '        torch.cuda.empty_cache()\n'
+                '    pipe = Pix2StructDocVQAPipeline.from_pretrained(weights_dir=WEIGHTS_DIR)\n'
+                "    print({{'reloaded_frozen_pipeline': True, 'reason': 'the previous pipeline had been adapted in place or freed'}})\n"
+                '\n'
                 "train_records = splits['train']\n"
                 "val_records = splits['validation']\n"
                 "test_records = splits['test']\n"
@@ -140,10 +199,18 @@ TEMPLATE = {
         },
         {
             "md": (
+                "<details><summary>Check your reasoning</summary>In the recorded run the empty baseline scored ANLS 0.0 (the scorer's floor), the majority answer 0.2949 (one training answer happens to be close to some test answers) with exact match 0.0, and the frozen model **1.0** ANLS and exact match: it already answers every synthetic test question exactly. Keep that in mind for Section 7.</details>"
+            ),
+        },
+        {
+            "md": (
                 "## 6. Adapt the final two decoder blocks\n\n"
                 "`adapt` freezes every parameter except decoder blocks 10 and 11. AdamW runs for two bounded epochs with "
                 "gradient clipping; epoch 0 records the frozen validation score and the highest validation ANLS wins. Training "
-                "is transactional, and the test split is not consulted during selection."
+                "is transactional, and the test split is not consulted during selection. Because `adapt` updates `pipe` in place, this cell "
+                "(and Section 5) first reload the frozen pipeline from the verified snapshot when `pipe` was already adapted or freed by an "
+                "earlier run, so a re-run with other values never stacks on a previous adaptation."
+                '\n\n**Predict before running:** the validation split already scores near the top for the frozen model. Which epoch will validation selection keep?'
             ),
             "code": (
                 "EPOCHS = 2\n"
@@ -152,6 +219,19 @@ TEMPLATE = {
                 "TRAINABLE_DECODER_LAYERS = 2\n\n"
                 "def report_epoch(entry):\n"
                 "    print(json.dumps(entry, ensure_ascii=False))\n\n"
+                '# SWP-F: adapt() trains decoder blocks 10-11 of `pipe` in place, and Section 8 frees `pipe`. If this pipeline was\n'
+                '# already adapted or freed (a re-run), start again from the pinned, digest-verified snapshot, so the frozen scores and\n'
+                '# every new adaptation begin from the frozen weights they are labelled with.\n'
+                "if globals().get('pipe') is None or pipe.adapter is not None:\n"
+                '    import gc\n'
+                '\n'
+                '    pipe = None\n'
+                '    gc.collect()\n'
+                '    if torch.cuda.is_available():\n'
+                '        torch.cuda.empty_cache()\n'
+                '    pipe = Pix2StructDocVQAPipeline.from_pretrained(weights_dir=WEIGHTS_DIR)\n'
+                "    print({{'reloaded_frozen_pipeline': True, 'reason': 'the previous pipeline had been adapted in place or freed'}})\n"
+                '\n'
                 "adapt_result = pipe.adapt(train_records, val_records, epochs=EPOCHS, lr=LEARNING_RATE, batch_size=BATCH_SIZE, trainable_decoder_layers=TRAINABLE_DECODER_LAYERS, seed=0, progress=report_epoch)\n"
                 "assert adapt_result['n_train'] == len(train_records)\n"
                 "assert adapt_result['n_val'] == len(val_records)\n"
@@ -161,10 +241,16 @@ TEMPLATE = {
         },
         {
             "md": (
+                '<details><summary>Check your reasoning</summary>In the recorded run the frozen validation score (epoch 0) was ANLS 0.9815 / exact match 0.9444, and epochs 1 and 2 both reached 1.0 / 1.0, so the earliest best epoch, **1**, was kept. Two decoder blocks (18,878,976 of 282,285,696 parameters) trained in about 95 s on a T4.</details>'
+            ),
+        },
+        {
+            "md": (
                 "## 7. Evaluate the selected adapter on held-out documents\n\n"
                 "The selected model is evaluated once on the held-out test rows. The comparison reports absolute ANLS and "
                 "exact match plus deltas versus the frozen checkpoint and baselines. Improvement is not an execution gate: "
                 "regressions remain evidence and must be recorded."
+                '\n\n**Predict before running:** given Section 5, what is the largest test gain the adapted model *could* show here?'
             ),
             "code": (
                 "adapted = pipe.evaluate(test_records)\n"
@@ -180,10 +266,16 @@ TEMPLATE = {
         },
         {
             "md": (
+                '<details><summary>Check your reasoning</summary>None: the frozen model already scored 1.0, so the recorded delta was 0.0 for both ANLS and exact match. This sample is **saturated** — it checks that adaptation, export and reload work, not that adaptation helps. A harder test set (real scans, unseen layouts) is needed to measure a gain.</details>'
+            ),
+        },
+        {
+            "md": (
                 "## 8. Export, reload, and verify answer parity\n\n"
                 "The artifact contains only trained decoder tensors in safetensors. Its manifest binds them to the exact base "
                 "model id, revision and weight digest, plus the artifact size and digest. The live model is released before a "
                 "fresh base loads the adapter; eight held-out answers must match before results are written."
+                '\n\n**Predict before running:** after freeing the model and reloading the adapter on a fresh base, will the eight held-out answers match exactly?'
             ),
             "code": (
                 "import csv\n"
@@ -211,6 +303,11 @@ TEMPLATE = {
                 "print({{'artifact_files': sorted(path.name for path in artifact_dir.iterdir()), 'reload_parity': reload_parity, 'outputs': sorted(os.listdir('outputs'))}})"
             ),
         },
+        {
+            "md": (
+                "<details><summary>Check your reasoning</summary>Yes: the recorded run reported 8 of 8 identical answers, with a 75,519,448-byte `adapter.safetensors` bound to the base model's digest.</details>"
+            ),
+        },
     ],
     "closing": (
         "## Interpretation and limits\n\n"
@@ -224,6 +321,33 @@ TEMPLATE = {
         "reachable, completes the stated E2E path. It does **not** establish benchmark superiority or production readiness.\n\n"
         "**Next experiments:** repeat across seeds; add an external document-domain test set; compare one versus two trainable "
         "decoder blocks; stratify by field type and layout; and inspect every held-out error.\n\n"
+        '## Troubleshooting\n\n'
+        '- **Section 1 stops with "This notebook needs a Linux x86_64 runtime"** — use Google Colab, Kaggle or a Linux x86_64 Jupyter server.\n'
+        '- **The uv wheel fails its size/SHA-256 check, or a download in Section 1 times out** — run Section 1 again; a complete environment is reused and an incomplete one is finished. If it repeats, `files.pythonhosted.org` or `pypi.org` is blocked or altered.\n'
+        '- **You re-ran Section 1 on its own** — nothing is lost: it keeps the running worker and every variable. After a session restart, run from the top.\n'
+        '- **"The E2E default path requires a CUDA GPU"** — choose a GPU runtime and Run all again.\n'
+        '- **"The isolated environment\'s Python process exited"** or **CUDA out of memory** — restart the session and choose **Run all**; if you re-ran Sections 5–7 after Section 8, restart instead (the reloaded adapter still holds GPU memory).\n'
+        '- **Section 3 reports a size or SHA-256 mismatch, or cannot reach the Hub** — the message names the file. Delete the folder Section 3 prints as `weights_dir` and run Section 3 again.\n'
+        "- **The corpus digest differs from `SAMPLE_DIGEST`** — the page images depend on the Pillow build's bundled font rendering; use the pinned environment Section 1 builds.\n"
+        '- **BYOD: "BYOD path … does not exist" / "the upload dialog exists only in Google Colab" / "Upload exactly one …"** — set `BYOD_PATH` to the zip in the runtime (it works on Kaggle and Jupyter); on Colab an empty path opens the dialog, and a cancelled dialog stops with that message.\n'
+        '- **BYOD: a `load_byod_dataset` or `validate_dataset` refusal** — it names the `records.csv` row and the rule (duplicate id, unreadable image, empty question or answer).\n\n'
+        '## Glossary\n\n'
+        '- **OCR-free document QA** — answering a question about a page image without a separate text-recognition step.\n'
+        '- **Patches** — the composite image (question header plus page) is cut into at most 2,048 patches the encoder reads.\n'
+        '- **ANLS** — average normalised Levenshtein similarity: per question, 1 minus the normalised edit distance to the closest accepted answer, counted only at 0.5 or above, then averaged.\n'
+        '- **Exact match** — the share of answers identical to an accepted answer after normalisation.\n'
+        '- **Empty / majority-answer baseline** — answering nothing; answering the most common training answer to every question.\n'
+        '- **Document-level split** — all questions about one document stay in one split, so the test documents are unseen.\n'
+        '- **Saturated sample** — the frozen model already scores the maximum, so no adaptation gain can show.\n'
+        '- **Epoch / validation selection** — one pass over the training rows; keeping the epoch with the best validation ANLS (epoch 0, the frozen model, included).\n'
+        '- **Adapter / reload parity** — the trained decoder tensors only, bound to the base digest; the reloaded model gives identical answers.\n'
+        '- **Isolated environment** — the separate Python 3.12.12 environment Section 1 builds from the hash lock; every later cell runs there.\n'
+        '- **BYOD** — bring your own data: your pages and questions through the same cells.\n\n'
+        '## Conclusion (your notes)\n\nOptional — fill in from **your** run:\n\n'
+        '- Empty ___, majority ___, frozen ___, adapted ___ (test ANLS); the delta was ___.\n'
+        '- The kept epoch was ___ because ___.\n'
+        '- What this sample can and cannot show about adaptation: ___.\n'
+        '- One harder test set I would build next: ___.\n\n'
         "## References\n\n"
         "- Repository: https://github.com/kurtvalcorza/pix2struct-docvqa-pipeline\n"
         "- Repository model card: https://github.com/kurtvalcorza/pix2struct-docvqa-pipeline/blob/main/MODEL_CARD.md\n"

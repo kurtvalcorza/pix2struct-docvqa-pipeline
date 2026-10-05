@@ -21,7 +21,7 @@ The serial Kaggle GPU suite must:
 2. use a fresh Kaggle kernel with Internet enabled and an explicit Tesla T4 accelerator;
 3. execute the committed notebook verbatim, allowing only the executor shim required by the suite;
 4. confirm the notebook records the same source revision and uses the embedded immutable model manifest;
-5. confirm all ten code cells complete after any required dependency-install restart;
+5. confirm every code cell completes in one pass (Section 1 builds or reuses the isolated environment; no restart);
 6. retain the input manifest, comparison metrics, training history, predictions CSV, adapter manifest and weights, and 8/8 reload parity;
 7. report runtime identity, wall time, staged files/bytes, and any warnings or retries.
 
