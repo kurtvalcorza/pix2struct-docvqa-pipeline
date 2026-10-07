@@ -2,7 +2,7 @@
 
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/kurtvalcorza/pix2struct-docvqa-pipeline/blob/main/tutorials/pix2struct_docvqa_colab.ipynb)
 
-Notebook specification: **DIMER Notebook Specification 2.0**. The notebook is a **standalone** (§4), generated carrier; edit the package or `tools/notebook_template.py`, then run `python tools/build_notebook.py`. Do not edit the notebook by hand.
+Notebook specification: **DIMER Notebook Specification 2.2**. The notebook is a **standalone** (§4), generated carrier; edit the package or `tools/notebook_template.py`, then run `python tools/build_notebook.py`. Do not edit the notebook by hand.
 
 | Notebook | Profile | Mode | Carrier | Default path | Runtime | BYOD | Release status |
 |---|---|---|---|---|---|---|---|

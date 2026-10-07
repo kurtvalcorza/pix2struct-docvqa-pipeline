@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate a STANDALONE DIMER tutorial notebook (NOTEBOOK_SPEC 2.0 §4) from repository sources — /2.2.
+"""Generate a STANDALONE DIMER tutorial notebook (NOTEBOOK_SPEC 2.2 §4) from repository sources — /2.2.
 
 /2 adds to /1: multi-module packages (one tagged cell per module, topologically ordered, package-relative
 imports removed), template-declared rewrite rules, and extra pinned snapshots (`extra_weights`) for packages
@@ -41,7 +41,7 @@ from pathlib import Path
 from typing import Any
 
 GENERATOR_VERSION = "build_notebook.py/2.2"
-NOTEBOOK_SPEC = "2.0"
+NOTEBOOK_SPEC = "2.2"
 
 # ST2: default rewrite rule; a template may replace it with its own `rewrites` list. Every rule must
 # match exactly once across the embedded modules, so a silent no-op is impossible.
@@ -429,6 +429,18 @@ else:
 )
 
 
+EMBEDDED_TITLE_PREFIX = "# @title Infrastructure: carried module "
+
+
+def embedded_module_text(cell_source: str) -> str:
+    """The carried module text of an embedded-module cell: the cell source without the `# @title Infrastructure`
+    comment line the generator puts first when `infrastructure_labels` is on (Colab shows it as the collapsed
+    cell's title; it is a comment, so the module text that runs is unchanged). Parity checks compare this."""
+    if cell_source.startswith(EMBEDDED_TITLE_PREFIX):
+        return cell_source.split("\n", 1)[1] if "\n" in cell_source else ""
+    return cell_source
+
+
 def template_contract() -> dict[str, str]:
     """Keys ``TEMPLATE`` must define (documentation for template authors). Optional keys are marked."""
     return {
@@ -460,6 +472,7 @@ def template_contract() -> dict[str, str]:
         "uv": "OPTIONAL (required with isolated_runtime): {'version', 'url', 'bytes', 'sha256'} of the pinned manylinux x86_64 uv wheel",
         "lock": "OPTIONAL (required with isolated_runtime): repository-relative hash-locked requirements compiled from the pins",
         "infrastructure_labels": "OPTIONAL bool (default False): label the setup, carrier and snapshot sections Infrastructure and collapse their cells (NOTEBOOK_SPEC 2.2 GDL11)",
+        "require_cuda": "OPTIONAL bool (default False): the Section 1 'record the runtime' cell stops with a GPU-runtime instruction when CUDA is absent, before any model download (RUN12)",
         "guided": "OPTIONAL {'opening': [markdown cells inserted after the header]} (NOTEBOOK_SPEC 2.2 GDL1-GDL4)",
     }
 
@@ -733,7 +746,7 @@ def _md(source: str) -> dict[str, Any]:
 def _code(source: str, metadata: dict[str, Any] | None = None) -> dict[str, Any]:
     return {"cell_type": "code", "execution_count": None, "id": "", "metadata": metadata or {}, "outputs": [], "source": source.rstrip("\n")}
 
-# NOTEBOOK_SPEC 2.0 §3.4/§28 declarations. A template MAY override `mode`, `run_all` and `byod`;
+# NOTEBOOK_SPEC 2.2 §3.4/§28 declarations. A template MAY override `mode`, `run_all` and `byod`;
 # E2E and ARTIFACT-INFERENCE templates MUST state `run_all` themselves (their default paths differ).
 MODES = ("REFERENCE", "GUIDED", "WORKSHOP")
 _RUN_ALL_DEFAULT = {
@@ -742,14 +755,14 @@ _RUN_ALL_DEFAULT = {
         "pinned snapshot, obtains the tutorial sample automatically, validates it into an input manifest before the model "
         "runs, runs the task locally in this kernel, writes the evaluation report, and exports machine-readable outputs "
         "with provenance. The default path needs no repository clone, no DIMER worker or service, no credential, no upload "
-        "dialog and no configuration edit (NOTEBOOK_SPEC 2.0 §5)."
+        "dialog and no configuration edit (NOTEBOOK_SPEC 2.2 §5)."
     ),
     "MULTI-CAPABILITY": (
         "Selecting **Run all** in a fresh supported runtime installs the pinned dependencies, stages and digest-verifies the "
         "pinned snapshot, obtains the tutorial sample automatically, validates it into an input manifest before the model "
         "runs, runs every demonstrated capability locally in this kernel with its own input/output contract, writes the "
         "evaluation report, and exports machine-readable outputs with provenance. The default path needs no repository "
-        "clone, no DIMER worker or service, no credential, no upload dialog and no configuration edit (NOTEBOOK_SPEC 2.0 §5)."
+        "clone, no DIMER worker or service, no credential, no upload dialog and no configuration edit (NOTEBOOK_SPEC 2.2 §5)."
     ),
 }
 _BYOD_DEFAULT = (
@@ -883,7 +896,14 @@ def render(repo: Path, template: dict[str, Any], revision: str | None = None) ->
                 f"source revision, the isolated Python ({template['managed_python']}), "
                 + ", ".join(f"`{m}`" for m in imports)
                 + " versions, and whether CUDA is available."
+                + (" This notebook needs a CUDA GPU, so the cell stops here — before any model download — with a runtime instruction when none is available." if template.get("require_cuda") else "")
             )
+        )
+        cuda_guard = (
+            "if not torch.cuda.is_available():\n"
+            "    raise RuntimeError('This notebook needs a CUDA GPU (a T4 is enough): choose Runtime -> Change runtime type -> T4 GPU, then Run all. Stopping here, before any model download.')\n"
+            if template.get("require_cuda")
+            else ""
         )
         add(
             _code(
@@ -891,7 +911,8 @@ def render(repo: Path, template: dict[str, Any], revision: str | None = None) ->
                 "import importlib\nimport os\nimport platform\nimport sys\n\n"
                 f"{source_literal}"
                 f"import {', '.join(imports)}\n"
-                f"print({{'notebook_source': NOTEBOOK_SOURCE, 'python': platform.python_version(), 'executable': sys.executable, {ident_print}, 'cuda': torch.cuda.is_available()}})",
+                f"print({{'notebook_source': NOTEBOOK_SOURCE, 'python': platform.python_version(), 'executable': sys.executable, {ident_print}, 'cuda': torch.cuda.is_available()}})\n"
+                + cuda_guard,
                 dict(collapsed),
             )
         )
@@ -926,14 +947,17 @@ def render(repo: Path, template: dict[str, Any], revision: str | None = None) ->
                 "snapshot verification (`verify_snapshot`), staged download (`stage_missing_files`), the named operational ceilings, the public "
                 "validation and evaluation helpers, and the pipeline class. The text is the modules', byte for byte, except for the rewrite rules "
                 f"listed in `tools/build_notebook.py` ({ctx['n_rewrites']} rule(s), plus the removal of package-relative `from .x import` lines, whose "
-                "names are already defined by the preceding cells). The repository's parity test (`tests/test_notebook_parity.py`) fails whenever "
+                "names are already defined by the preceding cells"
+                + (", and a `# @title Infrastructure` comment line heading each cell, which Colab shows as the collapsed cell's title" if labels else "")
+                + "). The repository's parity test (`tests/test_notebook_parity.py`) fails whenever "
                 "these cells and the modules diverge, so what you run here is what the repository tests. Nothing in these cells runs a model yet."
             )
             label = "\n\n" + infra.rstrip("\n") if infra else ""
             add(_md(title + label + intro + f"\n\n**Module {i + 1}/{n_mod}:** `{rel}`"))
         else:
             add(_md(f"**Module {i + 1}/{n_mod}:** `{rel}` (carried verbatim; see the note above)"))
-        add(_code(ctx["embedded"][m], {**collapsed, "dimer": {"embedded_module": rel, "module_sha256": ctx["per_module_sha256"][rel]}}))
+        title_line = f"{EMBEDDED_TITLE_PREFIX}{i + 1}/{n_mod}: {rel} (verbatim; see the note above)\n" if labels else ""
+        add(_code(title_line + ctx["embedded"][m], {**collapsed, "dimer": {"embedded_module": rel, "module_sha256": ctx["per_module_sha256"][rel]}}))
 
     manifest_literal = json.dumps(ctx["manifest"], indent=2, ensure_ascii=False)
     n_files = len(ctx["manifest"]["files"])
