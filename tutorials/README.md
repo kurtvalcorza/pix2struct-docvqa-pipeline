@@ -2,11 +2,11 @@
 
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/kurtvalcorza/pix2struct-docvqa-pipeline/blob/main/tutorials/pix2struct_docvqa_colab.ipynb)
 
-Notebook specification: **DIMER Notebook Specification 2.0**. The notebook is a **standalone** (§4), generated carrier; edit the package or `tools/notebook_template.py`, then run `python tools/build_notebook.py`. Do not edit the notebook by hand.
+Notebook specification: **DIMER Notebook Specification 2.2**. The notebook is a **standalone** (§4), generated carrier; edit the package or `tools/notebook_template.py`, then run `python tools/build_notebook.py`. Do not edit the notebook by hand.
 
 | Notebook | Profile | Mode | Carrier | Default path | Runtime | BYOD | Release status |
 |---|---|---|---|---|---|---|---|
-| `pix2struct_docvqa_colab.ipynb` | `E2E` | `GUIDED` | standalone; carries `pipeline.py`, `metrics.py`, and `samples.py` | deterministic 72/18/30 document-QA split; empty/majority/frozen baselines; final-two-decoder-block adaptation; held-out ANLS/exact match; safetensors export and fresh reload parity | CUDA GPU; clean Kaggle Tesla T4 run recorded 2026-09-26 | optional zip with `records.csv` and page images; gated off by default | **Release-grade** — commit `2602e66` / blob `078435c42445` passed on Kaggle Tesla T4 (10/10 code cells); record in [`docs/release-verification.md`](../docs/release-verification.md) |
+| `pix2struct_docvqa_colab.ipynb` | `E2E` | `GUIDED` | standalone; carries `pipeline.py`, `metrics.py`, and `samples.py` | deterministic 72/18/30 document-QA split; empty/majority/frozen baselines; final-two-decoder-block adaptation; held-out ANLS/exact match; safetensors export and fresh reload parity | CUDA GPU; Colab CLI Tesla T4 one-pass run recorded 2026-10-08 | optional zip with `records.csv` and page images; gated off by default | **Candidate** — commit `f197e08` / blob `c1ea0b6dbef8` passed a Colab CLI Tesla T4 one-pass run on 2026-10-08 (12/12 code cells, no restart); promotion is a review decision; record in [`docs/release-verification.md`](../docs/release-verification.md) |
 
 The generated corpus contains fictional business documents and is created locally in the runtime. Documents, rather than question rows, define split membership. The notebook records point estimates from one seeded synthetic split and makes no DocVQA benchmark or real-document claim.
 

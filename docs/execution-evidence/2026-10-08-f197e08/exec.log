@@ -1,0 +1,76 @@
+[colab] Parsing notebook '/home/kurt/colab-runs/pix2struct-docvqa-pipeline-f197e08-58fe65/pix2struct_docvqa_colab_f197e08_colab-cli-t4.ipynb'...
+[colab] Executing cell 1/12 - Infrastructure: build (or reuse) the isolated environment and route later cells to it...
+{'isolated_environment': '/content/dimer_isolated_env_f46f12059989', 'reused': False, 'isolated_python': '3.12.12', 'kernel_python': '3.13.15', 'locked_packages': 47, 'setup_seconds': 54}
+{'routed_to': '/content/dimer_isolated_env_f46f12059989/bin/python', 'worker_pid': 900, 'worker_reused': False}
+[colab] Executing cell 2/12 - Infrastructure: record the runtime...
+{'notebook_source': {'repository': 'pix2struct-docvqa-pipeline', 'repository_revision': '3de8eedd3b4a548a38400d73a56e7ae80db06a20', 'embedded_module': 'src/pix2struct_docvqa_pipeline/pipeline.py', 'embedded_modules': ['src/pix2struct_docvqa_pipeline/pipeline.py', 'src/pix2struct_docvqa_pipeline/metrics.py', 'src/pix2struct_docvqa_pipeline/samples.py'], 'module_sha256': '6680e53caac22130f469e48cab9f49df028609ab62a57d2ca307725940296278', 'generator': 'build_notebook.py/2.2', 'notebook_spec': '2.2'}, 'python': '3.12.12', 'executable': '/content/dimer_isolated_env_f46f12059989/bin/python', 'torch': '2.14.0+cu130', 'transformers': '4.57.6', 'cuda': True}
+[colab] Executing cell 3/12 - Infrastructure: carried module 1/3: src/pix2struct_docvqa_pipeline/pipeline.py (verbatim; see the note above)...
+[colab] Executing cell 4/12 - Infrastructure: carried module 2/3: src/pix2struct_docvqa_pipeline/metrics.py (verbatim; see the note above)...
+[colab] Executing cell 5/12 - Infrastructure: carried module 3/3: src/pix2struct_docvqa_pipeline/samples.py (verbatim; see the note above)...
+[colab] Executing cell 6/12 - Infrastructure: stage and digest-verify the pinned snapshot, then load the model...
+{'model_id': 'google/pix2struct-docvqa-base', 'revision': '63f6b3de436e39f75c7a486881a9c2c14a7f4e89', 'license': 'apache-2.0', 'files': 8, 'total_bytes': 1133308924}
+{'weights_dir': '/content/weights/pix2struct-docvqa-base', 'fetched': ['README.md', 'config.json', 'model.safetensors', 'preprocessor_config.json', 'special_tokens_map.json', 'spiece.model', 'tokenizer.json', 'tokenizer_config.json']}
+{'verified_files': 8, 'revision': '63f6b3de436e39f75c7a486881a9c2c14a7f4e89'}
+{'device': 'cuda:0', 'source': 'local-snapshot'}
+[colab] Executing cell 7/12 - pix2struct_docvqa-16...
+{
+  "source": "DIMER synthetic business-document QA sample",
+  "license": "CC0-1.0 (generated in code; no external document or personal data)",
+  "splits": {
+    "train": 72,
+    "validation": 18,
+    "test": 30
+  },
+  "digest": "b9e7b0b27ae120979c988da745c8d0324de4267925f8c53b7a2f7f66317a438a",
+  "expected_digest": "b9e7b0b27ae120979c988da745c8d0324de4267925f8c53b7a2f7f66317a438a",
+  "document_disjoint": true,
+  "findings": [
+    {
+      "probe": "duplicate-id",
+      "verdict": "rejected",
+      "message": "records[8]: id must be unique and match ^[A-Za-z0-9_.:-]{1,64}$"
+    },
+    {
+      "probe": "document-leakage",
+      "verdict": "rejected",
+      "message": "document 'synthetic-009' appears in both train and test"
+    }
+  ]
+}
+[colab] Executing cell 8/12 - pix2struct_docvqa-19...
+{'gpu': 'Tesla T4', 'empty': {'anls': 0.0, 'exact_match': 0.0}, 'majority': {'anls': 0.2949, 'exact_match': 0.0, 'answer': 'INV-2026-1009'}, 'frozen': {'anls': 1.0, 'exact_match': 1.0, 'n': 30, 'seconds': 22.93, 'adapted': False}}
+[colab] Executing cell 9/12 - pix2struct_docvqa-22...
+{"epoch": 0, "train_loss": null, "val": {"n": 18, "anls": 0.9815, "exact_match": 0.9444}, "note": "frozen model"}
+{"epoch": 1, "train_loss": 0.2373814603472013, "val": {"n": 18, "anls": 1.0, "exact_match": 1.0}}
+{"epoch": 2, "train_loss": 0.2676140943982561, "val": {"n": 18, "anls": 1.0, "exact_match": 1.0}}
+{'n_trainable': 18878976, 'n_total': 282285696, 'best_epoch': 1, 'selection': 'highest validation ANLS', 'seconds': 96.26}
+[colab] Executing cell 10/12 - pix2struct_docvqa-25...
+{'scored_weights': {'frozen_adapted_flag': False, 'adapted_adapted_flag': True}, 'sample_saturated': True, 'frozen_anls_headroom': 0.0}
+The frozen model already scores ANLS >= 0.95 on these held-out rows, so this sample cannot show an adaptation gain: a zero delta is the expected outcome, not a failure.
+{'held_out_rows_not_answered_exactly': 'none: every held-out answer matched an accepted answer exactly', 'count': 0}
+{
+  "anls": {
+    "empty": 0.0,
+    "majority": 0.2949,
+    "frozen": 1.0,
+    "adapted": 1.0
+  },
+  "exact_match": {
+    "empty": 0.0,
+    "majority": 0.0,
+    "frozen": 1.0,
+    "adapted": 1.0
+  },
+  "delta_vs_frozen": {
+    "anls": 0.0,
+    "exact_match": 0.0
+  },
+  "n_test": 30,
+  "estimation": "one seeded synthetic document split; no dispersion estimate",
+  "sample_saturated": true
+}
+[colab] Executing cell 11/12 - pix2struct_docvqa-28...
+{'artifact_files': ['adapter.safetensors', 'manifest.json'], 'reload_parity': {'identical_answers': 8, 'of': 28, 'identical_tensors': 28}, 'outputs': ['pix2struct_docvqa_adapter', 'pix2struct_docvqa_input_manifest.json', 'pix2struct_docvqa_predictions.csv', 'pix2struct_docvqa_result.json']}
+[colab] Executing cell 12/12 - pix2struct_docvqa-31...
+{'block_comparison_experiment': 'skipped (set RUN_BLOCK_COMPARISON = True to run it); nothing was trained or written'}
+[colab] Saving notebook with outputs to '/home/kurt/colab-runs/pix2struct-docvqa-pipeline-f197e08-58fe65/pix2struct_docvqa_colab_f197e08_colab-cli-t4_output.ipynb'...

@@ -273,8 +273,14 @@ def load_byod_dataset(path: str | Path) -> list[dict[str, Any]]:
         if name not in members:
             raise ValueError(f"records.csv names missing file {name!r}")
         if name not in images:
-            image = Image.open(io.BytesIO(members[name]))
-            image.load()
+            try:
+                image = Image.open(io.BytesIO(members[name]))
+                image.load()
+            except OSError as exc:  # UnidentifiedImageError is an OSError: name the row and the file
+                raise ValueError(
+                    f"records.csv row {row['id']!r}: file {name!r} is not a decodable image ({exc}); "
+                    "every `file` must be a PNG/JPEG page image inside the zip"
+                ) from exc
             images[name] = image.convert("RGB")
         records.append(
             {
