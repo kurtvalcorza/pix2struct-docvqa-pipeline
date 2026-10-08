@@ -59,7 +59,7 @@ weights/pix2struct-docvqa-base/
 
 ## Release status
 
-**Release-grade** for the exact E2E carrier recorded in `docs/release-verification.md`: commit `2602e66` / notebook blob `078435c42445` executed top-to-bottom on Kaggle Tesla T4 on 2026-09-26 UTC (10/10 post-restart code cells, 393.2 s). On the default synthetic 30-row held-out split, frozen and adapted ANLS were both 1.0 (majority baseline 0.2949), so this sample shows no adaptation gain; reload parity was 8/8. One seeded synthetic split on one runtime, not a DocVQA benchmark. Static/unit checks and notebook compilation remain source checks only; any change to the notebook blob returns it to Candidate until a new exact-blob run is recorded.
+**Candidate** — the standalone E2E tutorial was regenerated at `f197e08` (blob `c1ea0b6dbef8`); that exact blob passed a Colab CLI 0.7.4 sequential execution on a fresh Colab Tesla T4 (2026-10-08 UTC, default path only) in one pass, no restart, 0 errors, 12/12 code cells, 268.7 s, recorded in `docs/release-verification.md`. On the default synthetic 30-row held-out split, frozen and adapted ANLS were both 1.0 (majority baseline 0.2949), so this sample shows no adaptation gain; the reloaded adapter gave 8 identical answers. One seeded synthetic split on one runtime, not a DocVQA benchmark. Static/unit checks and notebook compilation remain source checks only. Promotion to Release-grade is a review decision against `docs/release-verification.md` for the exact release revision.
 
 ## Documentation
 
