@@ -52,13 +52,14 @@ MAX_QUESTION_CHARS = 256
 MAX_PATCHES = 2048
 MAX_IMAGE_SIDE = 4096
 MIN_IMAGE_SIDE = 16
-# ANLS, DocVQA's official metric: a normalised Levenshtein similarity below this threshold scores 0.
-# Normalisation follows the DocVQA organisers' evaluation code and task definition: answers are
-# compared lower-cased with leading/trailing whitespace stripped; they are not case sensitive but are
-# space sensitive, and punctuation is kept (see ``normalize_answer``).
+# ANLS (the DocVQA metric): a normalised Levenshtein similarity below this threshold scores 0.
+# This module implements the ANLS rules of MP-DocVQA-Framework ``metrics.py`` at commit 656d4e5,
+# consistent with the RRC DocVQA task description (answers not case sensitive, space sensitive);
+# the login-protected RRC evaluator itself was not inspected. Punctuation is kept (``normalize_answer``).
 ANLS_THRESHOLD = 0.5
 ANLS_NORMALISATION = (
-    "official DocVQA: lower-cased, leading/trailing whitespace stripped (punctuation and inner spaces kept)"
+    "MP-DocVQA-Framework metrics.py @656d4e5 rules: lower-cased, leading/trailing whitespace stripped "
+    "(punctuation and inner spaces kept)"
 )
 
 
@@ -156,12 +157,13 @@ def header_font_bytes() -> bytes:
 
 
 def normalize_answer(text: str) -> str:
-    """The official DocVQA answer normalisation: lower-case, then strip leading/trailing whitespace.
+    """Answer normalisation: lower-case, then strip leading/trailing whitespace.
 
-    Matches ``Evaluator._preprocess_str`` in the DocVQA organisers' evaluation code
+    Implements ``Evaluator._preprocess_str`` of MP-DocVQA-Framework
     (repository rubenpt91/MP-DocVQA-Framework, commit 656d4e5, ``metrics.py``: ``string.lower()`` then
     ``string.strip()``) and the Robust Reading Competition task definition ("Answers are not case
-    sensitive. Answers are space sensitive." https://rrc.cvc.uab.es/?ch=17&com=tasks). Punctuation is
+    sensitive. Answers are space sensitive." https://rrc.cvc.uab.es/?ch=17&com=tasks; the login-protected
+    RRC evaluator was not inspected). Punctuation is
     kept and inner whitespace is not collapsed, so ``"NW-2026-0417"`` and ``"NW 2026 0417"`` differ.
     """
     return text.lower().strip()
@@ -178,13 +180,14 @@ def _levenshtein(a: str, b: str) -> int:
 
 
 def anls(prediction: str, golds: Sequence[str], *, threshold: float = ANLS_THRESHOLD) -> float:
-    """Average Normalised Levenshtein Similarity for one question (Biten et al., ICCV 2019), as scored by
-    the official DocVQA evaluation code.
+    """Average Normalised Levenshtein Similarity for one question (Biten et al., ICCV 2019), following the
+    ANLS rules of MP-DocVQA-Framework ``metrics.py`` at commit 656d4e5.
 
     ``1 - lev(pred, gold) / max(len(pred), len(gold))`` over normalised strings (``normalize_answer``),
-    maximised over the accepted ``golds``; a best similarity below ``threshold`` scores 0 (one at or
-    above it is kept), so a wrong answer is not rewarded. An empty normalised prediction scores 0, as in
-    the official code.
+    maximised over the accepted ``golds``; a best similarity below ``threshold`` gets no credit (one at
+    or above it is kept). A sufficiently similar wrong string still gets partial credit: ``INV-2026-1008``
+    against ``INV-2026-1009`` scores 12/13. Every entry in ``golds`` must be an acceptable answer, because
+    the best match counts. An empty normalised prediction scores 0, as in that code.
     """
     if not golds:
         raise ValueError("golds must contain at least one accepted answer")

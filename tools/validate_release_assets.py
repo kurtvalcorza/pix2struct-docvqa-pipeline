@@ -69,7 +69,7 @@ MARKDOWN_MARKERS = (
     "## 5. Record non-neural baselines",
     "## 6. Adapt the final two decoder blocks",
     "## 7. Evaluate the selected adapter",
-    "## 8. Export, reload, and verify answer parity",
+    "## 8. Export, reload, and check serialization/reconstruction parity",
     "A negative delta is valid evidence",
     "point estimates",
     "does not prove DocVQA benchmark quality",

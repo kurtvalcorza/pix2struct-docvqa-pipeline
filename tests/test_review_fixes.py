@@ -131,7 +131,7 @@ def test_psd_m2_ceiling_explained_and_reported(nb: dict) -> None:
     markdown, and the cell computes `sample_saturated`, prints the scored weights and lists the inexact held-out rows."""
     seven_md = next(_src(c) for c in nb["cells"] if c["cell_type"] == "markdown" and _src(c).startswith("## 7."))
     assert re.search(r"ceiling effect|at ceiling|already answers|saturat|cannot show an? (adaptation )?gain", seven_md, re.I)
-    assert "How to read a zero or near-ceiling delta" in seven_md
+    assert "How to read a delta near the ceiling" in seven_md and "a tie or a regression still is" in seven_md
     seven = _cell_with(nb, "adapted = pipe.evaluate(test_records)")
     assert "sample_saturated = frozen['anls'] >= 0.95" in seven
     assert "'frozen_adapted_flag': frozen['adapted']" in seven
@@ -139,11 +139,24 @@ def test_psd_m2_ceiling_explained_and_reported(nb: dict) -> None:
     # the branch logic, with stand-in metrics
     block = seven.split("comparison = {", 1)[0]
     rows = [{"id": "a", "question": "q", "prediction": "x", "answers": ["x"], "anls": 1.0}, {"id": "b", "question": "q", "prediction": "y", "answers": ["z"], "anls": 0.0}]
-    ns = {"pipe": types.SimpleNamespace(evaluate=lambda r: {"anls": 0.5, "adapted": True, "rows": rows}), "test_records": [], "frozen": {"anls": 1.0, "adapted": False}}
+    ns = {"pipe": types.SimpleNamespace(evaluate=lambda r: {"anls": 0.5, "adapted": True, "rows": rows}), "test_records": [], "frozen": {"anls": 1.0, "adapted": False}, "DATA_READY": True}
     with contextlib.redirect_stdout(io.StringIO()) as out:
         exec(compile(block, "<seven>", "exec"), ns)
-    assert ns["sample_saturated"] is True and ns["not_exact"] == [{"id": "b", "question": "q", "prediction": "y", "accepted": ["z"], "anls": 0.0}]
-    assert "cannot show an adaptation gain" in out.getvalue()
+    assert ns["sample_saturated"] is True and ns["at_ceiling"] is True and ns["frozen_anls_headroom"] == 0.0
+    assert ns["not_exact"] == [{"id": "b", "question": "q", "prediction": "y", "accepted": ["z"], "anls": 0.0}]
+    printed = out.getvalue()
+    assert "(at ceiling): no improvement is possible here, but a tie or a regression still is" in printed
+    assert "cannot show" not in printed
+    # R63 Codex #3: near (not at) the ceiling a gain up to the headroom is possible, and the message says so
+    ns.update({"frozen": {"anls": 0.97, "adapted": False}})
+    with contextlib.redirect_stdout(io.StringIO()) as out:
+        exec(compile(block, "<seven>", "exec"), ns)
+    assert ns["sample_saturated"] is True and ns["at_ceiling"] is False and ns["frozen_anls_headroom"] == 0.03
+    assert "(near ceiling): a gain of at most 0.03 ANLS is possible" in out.getvalue() and "cannot show" not in out.getvalue()
+    # Section 7 refuses to run without a validated corpus (R63 Codex #8)
+    ns["DATA_READY"] = False
+    with pytest.raises(RuntimeError, match="Section 4 has not produced a validated corpus"):
+        exec(compile(block, "<seven>", "exec"), ns)
 
 
 # --- PSD-M3: rerun routes named; frozen scores guarded ---------------------------------------------------------------
@@ -155,7 +168,7 @@ def test_psd_m3_rerun_instructions_name_cells_and_frozen_flag_is_printed(nb: dic
     md = _markdown(nb)
     assert re.search(r"re-?run (from )?(section|cell)", md, re.I)
     assert "re-run Section 4 and every code cell of Sections 5–8 in order" in md
-    assert "re-run the Section 6, 7 and 8 cells in order" in md
+    assert "re-run only Section 6, and compare the validation history" in md and "re-run the Section 6, 7 and 8 cells in order" not in md
     five = _cell_with(nb, "frozen = pipe.evaluate(test_records)")
     assert "'adapted'" in five and "if frozen['adapted']:" in five
     assert five.index("if globals().get('pipe') is None or pipe.adapter is not None:") < five.index("frozen = pipe.evaluate")

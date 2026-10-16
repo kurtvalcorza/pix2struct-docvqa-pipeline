@@ -12,7 +12,7 @@ from .pipeline import anls, exact_match
 METRIC_DEFINITIONS = {
     "anls": (
         "mean answer normalized Levenshtein similarity with similarities below 0.5 set to zero "
-        "(official DocVQA normalisation: lower-cased, leading/trailing whitespace stripped)"
+        "(MP-DocVQA-Framework metrics.py @656d4e5 rules: lower-cased, leading/trailing whitespace stripped)"
     ),
     "exact_match": "fraction whose normalized prediction (lower-cased, stripped) equals an accepted answer",
 }
@@ -60,7 +60,8 @@ def majority_answer_baseline(
     answer = Counter(str(r["answers"][0]) for r in reference).most_common(1)[0][0]
     out = qa_metrics([answer] * len(records), records)
     out["baseline"] = (
-        "most frequent first-listed training answer (counted as an exact string), ignoring image and question"
+        "raw first-answer frequency baseline: the most frequent first-listed training answer "
+        "(counted as an exact string), ignoring image and question"
     )
     out["answer"] = answer
     return out
