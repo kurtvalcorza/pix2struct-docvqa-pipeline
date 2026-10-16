@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Generate a STANDALONE DIMER tutorial notebook (NOTEBOOK_SPEC 2.2 §4) from repository sources — /2.2.
+"""Generate a STANDALONE DIMER tutorial notebook (NOTEBOOK_SPEC 2.5 §4) from repository sources — /2.5.
+
+/2.5 (2026-10-16 row-63 review fix cycle) declares NOTEBOOK_SPEC 2.5 and adds two opt-in template keys:
+``use_notice`` (a DOC17-DOC21 blockquote cell placed right after the header, before any code) and
+``notebook_kind`` (written to ``metadata.dimer.notebook_kind``, KND1).
 
 /2 adds to /1: multi-module packages (one tagged cell per module, topologically ordered, package-relative
 imports removed), template-declared rewrite rules, and extra pinned snapshots (`extra_weights`) for packages
@@ -40,8 +44,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
-GENERATOR_VERSION = "build_notebook.py/2.2"
-NOTEBOOK_SPEC = "2.2"
+GENERATOR_VERSION = "build_notebook.py/2.5"
+NOTEBOOK_SPEC = "2.5"
 
 # ST2: default rewrite rule; a template may replace it with its own `rewrites` list. Every rule must
 # match exactly once across the embedded modules, so a silent no-op is impossible.
@@ -483,6 +487,8 @@ def template_contract() -> dict[str, str]:
         "infrastructure_labels": "OPTIONAL bool (default False): label the setup, carrier and snapshot sections Infrastructure and collapse their cells (NOTEBOOK_SPEC 2.2 GDL11)",
         "require_cuda": "OPTIONAL bool (default False): the Section 1 'record the runtime' cell stops with a GPU-runtime instruction when CUDA is absent, before any model download (RUN12)",
         "guided": "OPTIONAL {'opening': [markdown cells inserted after the header]} (NOTEBOOK_SPEC 2.2 GDL1-GDL4)",
+        "use_notice": "OPTIONAL markdown blockquote placed right after the header, before any code cell (NOTEBOOK_SPEC 2.5 DOC17-DOC21)",
+        "notebook_kind": "OPTIONAL TUTORIAL / DEMO / WORKSHOP / CAPSTONE, written to metadata.dimer.notebook_kind (NOTEBOOK_SPEC 2.5 KND1)",
     }
 
 
@@ -829,6 +835,8 @@ def render(repo: Path, template: dict[str, Any], revision: str | None = None) ->
         f"**This notebook does not demonstrate:** {template['exclusions'].strip()}"
     )
     add(_md(header))
+    if template.get("use_notice"):
+        add(_md(template["use_notice"].strip()))
     for opening in (template.get("guided") or {}).get("opening", []):
         add(_md(opening.format(**fmt)))
 
@@ -893,7 +901,9 @@ def render(repo: Path, template: dict[str, Any], revision: str | None = None) ->
                 "`# dimer: kernel cell`), and it is safe to re-run: a complete environment built from this exact lock is reused "
                 "rather than rebuilt, and a live worker is kept with every variable created so far, so the cells after it keep "
                 "working. To start over, restart the session and choose **Run all**. `DIMER_NOTEBOOK_CI_PREINSTALLED=1` lets an "
-                "executor that has already installed exactly these pins run every cell in its own kernel instead."
+                "executor that has already installed exactly these pins run every cell in its own kernel instead. `DIMER_ISOLATED_ENV` "
+                "overrides the folder the environment is built in (default `dimer_isolated_env_<first 12 hex of the lock digest>` in the "
+                "working directory); it changes only where the environment lives, not what is installed."
             )
         )
         add(_code(_isolated_install(ctx, template, pins_literal), {"cellView": "form", **({"jupyter": {"source_hidden": True}} if labels else {})}))
@@ -1040,6 +1050,7 @@ def render(repo: Path, template: dict[str, Any], revision: str | None = None) ->
             "dimer": {
                 "notebook_profile": template["profile"],
                 "notebook_mode": mode,
+                **({"notebook_kind": template["notebook_kind"]} if template.get("notebook_kind") else {}),
                 "notebook_spec": NOTEBOOK_SPEC,
                 "standalone": True,
                 **({"environment": "isolated hash-locked uv environment; nothing installed into the kernel"} if isolated else {}),

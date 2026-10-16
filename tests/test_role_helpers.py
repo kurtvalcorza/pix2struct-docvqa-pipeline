@@ -72,8 +72,11 @@ def test_validate_inputs_rejects_like_answer() -> None:
 
 
 def test_normalize_answer_and_exact_match() -> None:
-    assert normalize_answer("  $1,099.20 ") == "1 099 20"
-    assert exact_match("ACME, Corp", ["acme corp"]) is True
+    # Official DocVQA normalisation (R63-m4): lower-case and strip; punctuation and inner spaces kept.
+    assert normalize_answer("  $1,099.20 ") == "$1,099.20"
+    assert normalize_answer(" ACME  Corp\n") == "acme  corp"
+    assert exact_match(" ACME Corp ", ["acme corp"]) is True
+    assert exact_match("ACME, Corp", ["acme corp"]) is False
     assert exact_match("Acme Co", ["acme corp"]) is False
 
 
@@ -81,7 +84,8 @@ def test_anls_threshold_and_max_over_golds() -> None:
     assert anls("NW-2026-0417", ["NW-2026-0417"]) == 1.0
     assert anls("Acme Co", ["Acme Corp"]) == pytest.approx(7 / 9)
     assert anls("12", ["Acme Corp"]) == 0.0  # similarity below ANLS_THRESHOLD scores 0
-    assert anls("1,099.20", ["$1,099.20", "1099.20"]) == 1.0
+    # max over golds: 1 - 1/9 against "$1,099.20" beats 1 - 1/8 against "1099.20"
+    assert anls("1,099.20", ["$1,099.20", "1099.20"]) == pytest.approx(8 / 9)
     assert 0 < ANLS_THRESHOLD < 1
     with pytest.raises(ValueError, match="golds"):
         anls("x", [])

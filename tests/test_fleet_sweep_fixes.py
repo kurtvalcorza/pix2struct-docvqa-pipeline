@@ -253,7 +253,7 @@ def test_swp_b_byod_path_reads_file_and_refuses_with_names(nb: dict, tmp_path: P
         helper(str(bad), "file", (".zip",))
     monkeypatch.delitem(sys.modules, "google.colab", raising=False)
     monkeypatch.setitem(sys.modules, "google", types.ModuleType("google"))
-    with pytest.raises(RuntimeError, match="only in Google Colab"):
+    with pytest.raises(FileNotFoundError, match="only in Google Colab"):
         helper("", "file")
 
 

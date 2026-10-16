@@ -22,7 +22,7 @@ The serial Kaggle GPU suite must:
 3. execute the committed notebook verbatim, allowing only the executor shim required by the suite;
 4. confirm the notebook records the same source revision and uses the embedded immutable model manifest;
 5. confirm every code cell completes in one pass (Section 1 builds or reuses the isolated environment; no restart);
-6. retain the input manifest, comparison metrics, training history, predictions CSV, adapter manifest and weights, and 8/8 reload parity;
+6. retain the input manifest, comparison metrics, training history, predictions CSV, adapter manifest and weights, and 8/8 reload parity (from the 2026-10-16 revision the record keeps the denominators apart: `reload_parity` holds `identical_answers` / `answers_of` and `identical_tensors` / `tensors_of`);
 7. report runtime identity, wall time, staged files/bytes, and any warnings or retries.
 
 A run may pass structurally even if adapted held-out metrics regress; the negative delta must remain in the evidence. Promotion requires successful completion and faithful evidence, not a preselected metric gain.
@@ -38,3 +38,7 @@ A run may pass structurally even if adapted held-out metrics regress; the negati
 ## Promotion rule
 
 The current carrier is **Candidate**: it was regenerated at `f197e08` (blob `c1ea0b6dbef8`) and that exact blob passed the Colab CLI Tesla T4 run recorded above (2026-10-08 UTC, 12/12 code cells, 268.7 s, one pass, no restart, 0 errors, default path only), reproducing the recorded measurements; promotion to Release-grade is a review decision for the exact release revision. The earlier Release-grade record identifies commit `2602e66` / notebook blob `078435c42445` only and remains history; the measured values are one seeded synthetic split on one runtime, not a DocVQA benchmark. Keep **Candidate** for any carrier whose exact blob has no passing clean-run row. A later change to any carried module, notebook template, dependency pin, manifest, or generated notebook creates a new blob and invalidates the prior runtime evidence. Promotion updates this file, `STATUS.md`, `README.md`, and `tutorials/README.md` in one evidence-only commit; merge remains an explicit maintainer action.
+
+## Pending: 2026-10-16 review fix revision
+
+Branch `fix/pix2struct-tutorial-review-2026-10-16` (row-63 review, findings R63-M1, R63-m1..m5, R63-S1..S3) changes the notebook blob, so no run recorded above is evidence for it (REL14). It declares NOTEBOOK_SPEC 2.5, scores ANLS and exact match with the official DocVQA normalization (previously punctuation-insensitive), and records reload parity as `answers_of` / `tensors_of`. Numbers quoted in the notebook are labelled with the revision that produced them (blob `c1ea0b6d`). A CPU build record of this revision's code is in the PR; it is not hosted evidence. A hosted run of the new blob is required before this revision can be reviewed for promotion.

@@ -60,17 +60,17 @@ def _cell_with(nb: dict, marker: str) -> str:
     return found[0]
 
 
-# --- PSD-m3: spec 2.2 everywhere -----------------------------------------------------------------------------------
+# --- PSD-m3 / R63-m2: spec 2.5 everywhere -----------------------------------------------------------------------------------
 
 
-def test_psd_m3_spec_2_2_declared_everywhere(nb: dict) -> None:
-    """PSD-m3: metadata, opening cell, registry, validator and generator agree on NOTEBOOK_SPEC 2.2 (§32 item 6)."""
-    assert nb["metadata"]["dimer"]["notebook_spec"] == "2.2"
-    assert build.NOTEBOOK_SPEC == "2.2"
+def test_psd_m3_spec_2_5_declared_everywhere(nb: dict) -> None:
+    """PSD-m3 / R63-m2: metadata, opening cell, registry, validator and generator agree on NOTEBOOK_SPEC 2.5 (§32 item 6)."""
+    assert nb["metadata"]["dimer"]["notebook_spec"] == "2.5"
+    assert build.NOTEBOOK_SPEC == "2.5"
     validator = _load("validate_release_assets_review", TOOLS / "validate_release_assets.py")
-    assert validator.NOTEBOOK_SPEC == "2.2"
-    assert "DIMER Notebook Specification 2.2 — **standalone** (§4)" in _src(nb["cells"][0])
-    assert "DIMER Notebook Specification 2.2" in (ROOT / "tutorials" / "README.md").read_text(encoding="utf-8")
+    assert validator.NOTEBOOK_SPEC == "2.5"
+    assert "DIMER Notebook Specification 2.5 — **standalone** (§4)" in _src(nb["cells"][0])
+    assert "DIMER Notebook Specification 2.5" in (ROOT / "tutorials" / "README.md").read_text(encoding="utf-8")
     text = _markdown(nb) + "\n".join(_src(c) for c in _code_cells(nb))
     assert "Specification 2.0" not in text and "NOTEBOOK_SPEC 2.0" not in text
 
@@ -187,24 +187,31 @@ def _parity_block(nb: dict) -> tuple[str, str]:
     return before, after
 
 
-def _run_parity(nb: dict, live: dict, reloaded: dict) -> dict:
+def _run_parity(nb: dict, live: dict, reloaded: dict, answers=("a",) * 8, merged: bool = False) -> dict:
     before, after = _parity_block(nb)
     ns = {
         "adapt_result": {"trainable_names": sorted(live)},
         "pipe": types.SimpleNamespace(_model=types.SimpleNamespace(state_dict=lambda: {k: _T(v) for k, v in live.items()})),
         "reloaded": types.SimpleNamespace(_model=types.SimpleNamespace(state_dict=lambda: {k: _T(v) for k, v in reloaded.items()})),
         "torch": types.SimpleNamespace(equal=lambda a, b: a.v == b.v),
+        "expected_answers": list(answers), "actual_answers": list(answers),
     }
     exec(compile(before, "<before>", "exec"), ns)
     exec(compile(after, "<after>", "exec"), ns)
-    return ns["tensor_parity"]
+    reload_line = next(ln for ln in _cell_with(nb, "del pipe\n").splitlines() if ln.startswith("reload_parity = "))
+    exec(compile(reload_line, "<reload_parity>", "exec"), ns)
+    return ns["tensor_parity"] if not merged else ns["reload_parity"]
 
 
 def test_psd_m1_tensor_parity_detects_a_base_loaded_without_the_adapter(nb: dict) -> None:
     """PSD-m1 acceptance: the Section 8 check records the trained tensors before `del pipe` and fails when the reloaded
     model holds the base tensors instead; it passes when every trained tensor is identical."""
     live = {"decoder.layer.10.w": 1.5, "decoder.layer.11.w": 2.5, "decoder.final_layer_norm.weight": 0.5}
-    assert _run_parity(nb, live, dict(live)) == {"identical_tensors": 3, "of": 3}
+    assert _run_parity(nb, live, dict(live)) == {"identical_tensors": 3, "tensors_of": 3}
+    # R63-M1: the merged record keeps the answer denominator (8) and the tensor denominator apart
+    assert _run_parity(nb, live, dict(live), merged=True) == {
+        "identical_answers": 8, "answers_of": 8, "identical_tensors": 3, "tensors_of": 3,
+    }
     base = {"decoder.layer.10.w": 1.0, "decoder.layer.11.w": 2.0, "decoder.final_layer_norm.weight": 0.5}
     with pytest.raises(AssertionError, match="identical_tensors.: 1"):
         _run_parity(nb, live, base)
@@ -229,7 +236,7 @@ def test_psd_m4_cuda_check_runs_in_section_1_before_any_download(nb: dict) -> No
     with pytest.raises(RuntimeError, match="before any model download"):
         exec(compile(guard, "<guard>", "exec"), ns)
     prereq = next(_src(c) for c in nb["cells"] if c["cell_type"] == "markdown" and _src(c).startswith("## Prerequisites"))
-    assert "**212.1 s**" in prereq and "Tesla T4" in prereq
+    assert "**268.7 s**" in prereq and "blob `c1ea0b6d`" in prereq and "T4" in prereq
     assert re.search(r"\b\d+\s*(s|sec|seconds|min|minutes|hours?)\b", prereq)
 
 
@@ -276,9 +283,10 @@ def _pages(n: int, folder: str = "") -> list[tuple[str, bytes]]:
 
 
 def _byod_branch(nb: dict) -> str:
+    """The Section 4 BYOD loader (``def load_byod_splits():`` ... ``return splits``) plus a call that binds ``splits``."""
     source = _cell_with(nb, "USE_BYOD = False  # @param")
-    body = source.split("\nif USE_BYOD:\n", 1)[1].split("\nelse:\n", 1)[0]
-    return textwrap.dedent(body)
+    body = "def load_byod_splits():\n" + source.split("\ndef load_byod_splits():\n", 1)[1].split("\n    return splits\n", 1)[0]
+    return textwrap.dedent(body) + "\n    return splits\n\n\nsplits = load_byod_splits()\n"
 
 
 def _run_byod(nb: dict, work: Path, payload: bytes) -> dict:
