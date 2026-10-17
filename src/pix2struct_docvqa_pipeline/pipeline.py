@@ -13,7 +13,6 @@ from __future__ import annotations
 import hashlib
 import json
 import math
-import re
 import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -53,9 +52,15 @@ MAX_QUESTION_CHARS = 256
 MAX_PATCHES = 2048
 MAX_IMAGE_SIDE = 4096
 MIN_IMAGE_SIDE = 16
-# ANLS (DocVQA's official metric): a normalised Levenshtein similarity below this threshold scores 0.
+# ANLS (the DocVQA metric): a normalised Levenshtein similarity below this threshold scores 0.
+# This module implements the ANLS rules of MP-DocVQA-Framework ``metrics.py`` at commit 656d4e5,
+# consistent with the RRC DocVQA task description (answers not case sensitive, space sensitive);
+# the login-protected RRC evaluator itself was not inspected. Punctuation is kept (``normalize_answer``).
 ANLS_THRESHOLD = 0.5
-_PUNCT_RE = re.compile(r"[^\w\s]")
+ANLS_NORMALISATION = (
+    "MP-DocVQA-Framework metrics.py @656d4e5 rules: lower-cased, leading/trailing whitespace stripped "
+    "(punctuation and inner spaces kept)"
+)
 
 
 def _sha256(path: Path) -> str:
@@ -152,8 +157,16 @@ def header_font_bytes() -> bytes:
 
 
 def normalize_answer(text: str) -> str:
-    """DocVQA-style normalisation: lower-case, punctuation removed, whitespace collapsed."""
-    return " ".join(_PUNCT_RE.sub(" ", text.lower()).split())
+    """Answer normalisation: lower-case, then strip leading/trailing whitespace.
+
+    Implements ``Evaluator._preprocess_str`` of MP-DocVQA-Framework
+    (repository rubenpt91/MP-DocVQA-Framework, commit 656d4e5, ``metrics.py``: ``string.lower()`` then
+    ``string.strip()``) and the Robust Reading Competition task definition ("Answers are not case
+    sensitive. Answers are space sensitive." https://rrc.cvc.uab.es/?ch=17&com=tasks; the login-protected
+    RRC evaluator was not inspected). Punctuation is
+    kept and inner whitespace is not collapsed, so ``"NW-2026-0417"`` and ``"NW 2026 0417"`` differ.
+    """
+    return text.lower().strip()
 
 
 def _levenshtein(a: str, b: str) -> int:
@@ -167,14 +180,20 @@ def _levenshtein(a: str, b: str) -> int:
 
 
 def anls(prediction: str, golds: Sequence[str], *, threshold: float = ANLS_THRESHOLD) -> float:
-    """Average Normalised Levenshtein Similarity for one question (Biten et al., ICDAR 2019).
+    """Average Normalised Levenshtein Similarity for one question (Biten et al., ICCV 2019), following the
+    ANLS rules of MP-DocVQA-Framework ``metrics.py`` at commit 656d4e5.
 
-    ``1 - lev(pred, gold) / max(len(pred), len(gold))`` over normalised strings, maximised over the
-    accepted ``golds``; a similarity below ``threshold`` scores 0 so a near-miss is not rewarded.
+    ``1 - lev(pred, gold) / max(len(pred), len(gold))`` over normalised strings (``normalize_answer``),
+    maximised over the accepted ``golds``; a best similarity below ``threshold`` gets no credit (one at
+    or above it is kept). A sufficiently similar wrong string still gets partial credit: ``INV-2026-1008``
+    against ``INV-2026-1009`` scores 12/13. Every entry in ``golds`` must be an acceptable answer, because
+    the best match counts. An empty normalised prediction scores 0, as in that code.
     """
     if not golds:
         raise ValueError("golds must contain at least one accepted answer")
     pred = normalize_answer(prediction)
+    if not pred:
+        return 0.0
     best = 0.0
     for gold in golds:
         ref = normalize_answer(gold)
@@ -331,13 +350,13 @@ def evaluation_report(
             "id": "anls",
             "value": sum(entry["anls"] for entry in per_question) / len(per_question),
             "threshold": ANLS_THRESHOLD,
-            "normalisation": "lower-cased, punctuation removed, whitespace collapsed; max over golds",
+            "normalisation": ANLS_NORMALISATION + "; max over golds",
             "estimation": f"{len(per_question)} question(s) on one page, no dispersion estimate",
         },
         {
             "id": "exact_match",
             "value": sum(entry["exact_match"] for entry in per_question) / len(per_question),
-            "normalisation": "lower-cased, punctuation removed, whitespace collapsed",
+            "normalisation": ANLS_NORMALISATION,
             "estimation": f"{len(per_question)} question(s) on one page, no dispersion estimate",
         },
     ]

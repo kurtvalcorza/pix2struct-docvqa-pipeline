@@ -39,7 +39,8 @@ EXPECTED_OUTPUTS = (
 )
 
 CODE_MARKERS = (
-    "splits = build_sample_dataset()",
+    "splits = load_byod_splits() if USE_BYOD else build_sample_dataset()",
+    "byod_refusal = str(exc)",
     "records = load_byod_dataset(str(byod_zip))",
     "BYOD_PATH = ''",
     "pipe = Pix2StructDocVQAPipeline.from_pretrained(weights_dir=WEIGHTS_DIR)",
@@ -68,7 +69,7 @@ MARKDOWN_MARKERS = (
     "## 5. Record non-neural baselines",
     "## 6. Adapt the final two decoder blocks",
     "## 7. Evaluate the selected adapter",
-    "## 8. Export, reload, and verify answer parity",
+    "## 8. Export, reload, and check serialization/reconstruction parity",
     "A negative delta is valid evidence",
     "point estimates",
     "does not prove DocVQA benchmark quality",
@@ -94,7 +95,7 @@ FORBIDDEN_OUTSIDE_MODULE = (
 # Specification 2.2; see docs/release-verification.md for the release gate.
 # ---------------------------------------------------------------------------
 
-NOTEBOOK_SPEC = "2.2"
+NOTEBOOK_SPEC = "2.5"
 ALLOWED_PROFILES = {"E2E", "ARTIFACT-INFERENCE", "TASK-INFERENCE", "MULTI-CAPABILITY", "SMOKE"}
 STATUS_TOKENS = ("Candidate", "Release-grade")
 PLACEHOLDER = re.compile(r"\b(TODO|TBD|FIXME)\b|Insert text here|Tooltip:", re.I)
@@ -169,7 +170,7 @@ COMMON_MARKDOWN_MARKERS = (
     "without the repository being",
     "It does **not** establish benchmark superiority",
     "## References",
-    f"- Repository model card: https://github.com/kurtvalcorza/{REPO_NAME}/blob/main/MODEL_CARD.md",
+    f"model card: https://github.com/kurtvalcorza/{REPO_NAME}/blob/main/MODEL_CARD.md",
 )
 # Patterns that must never appear in tutorial code (comment-stripped), in any cell.
 FORBIDDEN_PATTERNS = (
@@ -406,6 +407,13 @@ def _validate_notebook_structure(path: Path, notebook: dict) -> tuple[list[tuple
     spec = dimer.get("notebook_spec", dimer.get("notebook_spec_version"))
     _check(spec == NOTEBOOK_SPEC, f"{path.name}: metadata.dimer must declare notebook spec version '{NOTEBOOK_SPEC}'")
     _check(dimer.get("notebook_mode") in ("REFERENCE", "GUIDED", "WORKSHOP"), f"{path.name}: metadata.dimer.notebook_mode must declare a §3.3 pedagogical mode")
+    _check(dimer.get("notebook_kind") == "TUTORIAL", f"{path.name}: metadata.dimer.notebook_kind must declare the §3.7 kind TUTORIAL (KND1)")
+    cells = notebook.get("cells", [])
+    first_code = next((i for i, c in enumerate(cells) if c.get("cell_type") == "code"), len(cells))
+    _check(
+        any(c.get("cell_type") == "markdown" and "".join(c.get("source", "")).startswith("> **⚠️ Notice.**") for c in cells[:first_code]),
+        f"{path.name}: a use-notice blockquote must precede the first code cell (DOC17-DOC21)",
+    )
     _check(dimer.get("standalone") is True, f"{path.name}: metadata.dimer.standalone must be true (ST6)")
     generated = dimer.get("generated_from")
     _check(isinstance(generated, dict), f"{path.name}: metadata.dimer.generated_from is required (ST5)")

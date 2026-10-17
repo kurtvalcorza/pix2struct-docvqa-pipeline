@@ -9,6 +9,7 @@ import json
 import random
 import re
 import zipfile
+from collections import Counter
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -57,23 +58,41 @@ def _font(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
     return ImageFont.load_default(size=size)
 
 
-def _document(index: int) -> tuple[Image.Image, dict[str, str]]:
-    vendor = _VENDORS[index % len(_VENDORS)]
-    city = _CITIES[(index * 3) % len(_CITIES)]
-    contact = _CONTACTS[(index * 2) % len(_CONTACTS)]
-    invoice = f"INV-{2026 + index // 90}-{1000 + index:04d}"
-    po = f"PO-{70000 + index * 17}"
-    total = f"PHP {1250 + index * 137:,.2f}"
-    date = f"2026-{1 + index % 9:02d}-{1 + (index * 7) % 27:02d}"
-    fields = {
-        "vendor": vendor,
-        "city": city,
-        "contact": contact,
-        "invoice": invoice,
-        "po": po,
-        "total": total,
-        "date": date,
+def _fields(index: int) -> dict[str, str]:
+    """The field values of sample document ``index``. Known restrictions, kept because SAMPLE_DIGEST pins
+    the pages: ``(index * 3) % 6`` reaches only Manila and Baguio of the six cities, and the contact is
+    fixed by the vendor (five vendor/contact pairs). Questions ask only for invoice, PO and total."""
+    return {
+        "vendor": _VENDORS[index % len(_VENDORS)],
+        "city": _CITIES[(index * 3) % len(_CITIES)],
+        "contact": _CONTACTS[(index * 2) % len(_CONTACTS)],
+        "invoice": f"INV-{2026 + index // 90}-{1000 + index:04d}",
+        "po": f"PO-{70000 + index * 17}",
+        "total": f"PHP {1250 + index * 137:,.2f}",
+        "date": f"2026-{1 + index % 9:02d}-{1 + (index * 7) % 27:02d}",
     }
+
+
+def sample_field_frequencies(splits: Mapping[str, Sequence[Mapping[str, Any]]]) -> dict[str, Any]:
+    """Per split, how often each vendor, city and page layout occurs among the generated documents."""
+    out: dict[str, Any] = {}
+    for name, rows in splits.items():
+        ids = {str(r["document_id"]) for r in rows}
+        indices = sorted(int(i.rsplit("-", 1)[1]) for i in ids if i.startswith("synthetic-"))
+        fields = [_fields(i) for i in indices]
+        out[name] = {
+            "documents": len(indices),
+            "vendor": dict(Counter(f["vendor"] for f in fields)),
+            "city": dict(Counter(f["city"] for f in fields)),
+            "layout": dict(Counter("table" if i % 2 else "block" for i in indices)),
+        }
+    return out
+
+
+def _document(index: int) -> tuple[Image.Image, dict[str, str]]:
+    fields = _fields(index)
+    vendor, city, contact = fields["vendor"], fields["city"], fields["contact"]
+    invoice, po, total, date = fields["invoice"], fields["po"], fields["total"], fields["date"]
     image = Image.new("RGB", (768, 1024), "white")
     draw = ImageDraw.Draw(image)
     title, body, small = _font(34), _font(24), _font(18)

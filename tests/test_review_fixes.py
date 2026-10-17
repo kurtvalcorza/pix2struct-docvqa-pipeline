@@ -60,17 +60,17 @@ def _cell_with(nb: dict, marker: str) -> str:
     return found[0]
 
 
-# --- PSD-m3: spec 2.2 everywhere -----------------------------------------------------------------------------------
+# --- PSD-m3 / R63-m2: spec 2.5 everywhere -----------------------------------------------------------------------------------
 
 
-def test_psd_m3_spec_2_2_declared_everywhere(nb: dict) -> None:
-    """PSD-m3: metadata, opening cell, registry, validator and generator agree on NOTEBOOK_SPEC 2.2 (§32 item 6)."""
-    assert nb["metadata"]["dimer"]["notebook_spec"] == "2.2"
-    assert build.NOTEBOOK_SPEC == "2.2"
+def test_psd_m3_spec_2_5_declared_everywhere(nb: dict) -> None:
+    """PSD-m3 / R63-m2: metadata, opening cell, registry, validator and generator agree on NOTEBOOK_SPEC 2.5 (§32 item 6)."""
+    assert nb["metadata"]["dimer"]["notebook_spec"] == "2.5"
+    assert build.NOTEBOOK_SPEC == "2.5"
     validator = _load("validate_release_assets_review", TOOLS / "validate_release_assets.py")
-    assert validator.NOTEBOOK_SPEC == "2.2"
-    assert "DIMER Notebook Specification 2.2 — **standalone** (§4)" in _src(nb["cells"][0])
-    assert "DIMER Notebook Specification 2.2" in (ROOT / "tutorials" / "README.md").read_text(encoding="utf-8")
+    assert validator.NOTEBOOK_SPEC == "2.5"
+    assert "DIMER Notebook Specification 2.5 — **standalone** (§4)" in _src(nb["cells"][0])
+    assert "DIMER Notebook Specification 2.5" in (ROOT / "tutorials" / "README.md").read_text(encoding="utf-8")
     text = _markdown(nb) + "\n".join(_src(c) for c in _code_cells(nb))
     assert "Specification 2.0" not in text and "NOTEBOOK_SPEC 2.0" not in text
 
@@ -131,7 +131,7 @@ def test_psd_m2_ceiling_explained_and_reported(nb: dict) -> None:
     markdown, and the cell computes `sample_saturated`, prints the scored weights and lists the inexact held-out rows."""
     seven_md = next(_src(c) for c in nb["cells"] if c["cell_type"] == "markdown" and _src(c).startswith("## 7."))
     assert re.search(r"ceiling effect|at ceiling|already answers|saturat|cannot show an? (adaptation )?gain", seven_md, re.I)
-    assert "How to read a zero or near-ceiling delta" in seven_md
+    assert "How to read a delta near the ceiling" in seven_md and "a tie or a regression still is" in seven_md
     seven = _cell_with(nb, "adapted = pipe.evaluate(test_records)")
     assert "sample_saturated = frozen['anls'] >= 0.95" in seven
     assert "'frozen_adapted_flag': frozen['adapted']" in seven
@@ -139,11 +139,24 @@ def test_psd_m2_ceiling_explained_and_reported(nb: dict) -> None:
     # the branch logic, with stand-in metrics
     block = seven.split("comparison = {", 1)[0]
     rows = [{"id": "a", "question": "q", "prediction": "x", "answers": ["x"], "anls": 1.0}, {"id": "b", "question": "q", "prediction": "y", "answers": ["z"], "anls": 0.0}]
-    ns = {"pipe": types.SimpleNamespace(evaluate=lambda r: {"anls": 0.5, "adapted": True, "rows": rows}), "test_records": [], "frozen": {"anls": 1.0, "adapted": False}}
+    ns = {"pipe": types.SimpleNamespace(evaluate=lambda r: {"anls": 0.5, "adapted": True, "rows": rows}), "test_records": [], "frozen": {"anls": 1.0, "adapted": False}, "DATA_READY": True}
     with contextlib.redirect_stdout(io.StringIO()) as out:
         exec(compile(block, "<seven>", "exec"), ns)
-    assert ns["sample_saturated"] is True and ns["not_exact"] == [{"id": "b", "question": "q", "prediction": "y", "accepted": ["z"], "anls": 0.0}]
-    assert "cannot show an adaptation gain" in out.getvalue()
+    assert ns["sample_saturated"] is True and ns["at_ceiling"] is True and ns["frozen_anls_headroom"] == 0.0
+    assert ns["not_exact"] == [{"id": "b", "question": "q", "prediction": "y", "accepted": ["z"], "anls": 0.0}]
+    printed = out.getvalue()
+    assert "(at ceiling): no improvement is possible here, but a tie or a regression still is" in printed
+    assert "cannot show" not in printed
+    # R63 Codex #3: near (not at) the ceiling a gain up to the headroom is possible, and the message says so
+    ns.update({"frozen": {"anls": 0.97, "adapted": False}})
+    with contextlib.redirect_stdout(io.StringIO()) as out:
+        exec(compile(block, "<seven>", "exec"), ns)
+    assert ns["sample_saturated"] is True and ns["at_ceiling"] is False and ns["frozen_anls_headroom"] == 0.03
+    assert "(near ceiling): a gain of at most 0.03 ANLS is possible" in out.getvalue() and "cannot show" not in out.getvalue()
+    # Section 7 refuses to run without a validated corpus (R63 Codex #8)
+    ns["DATA_READY"] = False
+    with pytest.raises(RuntimeError, match="Section 4 has not produced a validated corpus"):
+        exec(compile(block, "<seven>", "exec"), ns)
 
 
 # --- PSD-M3: rerun routes named; frozen scores guarded ---------------------------------------------------------------
@@ -155,7 +168,7 @@ def test_psd_m3_rerun_instructions_name_cells_and_frozen_flag_is_printed(nb: dic
     md = _markdown(nb)
     assert re.search(r"re-?run (from )?(section|cell)", md, re.I)
     assert "re-run Section 4 and every code cell of Sections 5–8 in order" in md
-    assert "re-run the Section 6, 7 and 8 cells in order" in md
+    assert "re-run only Section 6, and compare the validation history" in md and "re-run the Section 6, 7 and 8 cells in order" not in md
     five = _cell_with(nb, "frozen = pipe.evaluate(test_records)")
     assert "'adapted'" in five and "if frozen['adapted']:" in five
     assert five.index("if globals().get('pipe') is None or pipe.adapter is not None:") < five.index("frozen = pipe.evaluate")
@@ -187,24 +200,31 @@ def _parity_block(nb: dict) -> tuple[str, str]:
     return before, after
 
 
-def _run_parity(nb: dict, live: dict, reloaded: dict) -> dict:
+def _run_parity(nb: dict, live: dict, reloaded: dict, answers=("a",) * 8, merged: bool = False) -> dict:
     before, after = _parity_block(nb)
     ns = {
         "adapt_result": {"trainable_names": sorted(live)},
         "pipe": types.SimpleNamespace(_model=types.SimpleNamespace(state_dict=lambda: {k: _T(v) for k, v in live.items()})),
         "reloaded": types.SimpleNamespace(_model=types.SimpleNamespace(state_dict=lambda: {k: _T(v) for k, v in reloaded.items()})),
         "torch": types.SimpleNamespace(equal=lambda a, b: a.v == b.v),
+        "expected_answers": list(answers), "actual_answers": list(answers),
     }
     exec(compile(before, "<before>", "exec"), ns)
     exec(compile(after, "<after>", "exec"), ns)
-    return ns["tensor_parity"]
+    reload_line = next(ln for ln in _cell_with(nb, "del pipe\n").splitlines() if ln.startswith("reload_parity = "))
+    exec(compile(reload_line, "<reload_parity>", "exec"), ns)
+    return ns["tensor_parity"] if not merged else ns["reload_parity"]
 
 
 def test_psd_m1_tensor_parity_detects_a_base_loaded_without_the_adapter(nb: dict) -> None:
     """PSD-m1 acceptance: the Section 8 check records the trained tensors before `del pipe` and fails when the reloaded
     model holds the base tensors instead; it passes when every trained tensor is identical."""
     live = {"decoder.layer.10.w": 1.5, "decoder.layer.11.w": 2.5, "decoder.final_layer_norm.weight": 0.5}
-    assert _run_parity(nb, live, dict(live)) == {"identical_tensors": 3, "of": 3}
+    assert _run_parity(nb, live, dict(live)) == {"identical_tensors": 3, "tensors_of": 3}
+    # R63-M1: the merged record keeps the answer denominator (8) and the tensor denominator apart
+    assert _run_parity(nb, live, dict(live), merged=True) == {
+        "identical_answers": 8, "answers_of": 8, "identical_tensors": 3, "tensors_of": 3,
+    }
     base = {"decoder.layer.10.w": 1.0, "decoder.layer.11.w": 2.0, "decoder.final_layer_norm.weight": 0.5}
     with pytest.raises(AssertionError, match="identical_tensors.: 1"):
         _run_parity(nb, live, base)
@@ -229,7 +249,7 @@ def test_psd_m4_cuda_check_runs_in_section_1_before_any_download(nb: dict) -> No
     with pytest.raises(RuntimeError, match="before any model download"):
         exec(compile(guard, "<guard>", "exec"), ns)
     prereq = next(_src(c) for c in nb["cells"] if c["cell_type"] == "markdown" and _src(c).startswith("## Prerequisites"))
-    assert "**212.1 s**" in prereq and "Tesla T4" in prereq
+    assert "**268.7 s**" in prereq and "blob `c1ea0b6d`" in prereq and "T4" in prereq
     assert re.search(r"\b\d+\s*(s|sec|seconds|min|minutes|hours?)\b", prereq)
 
 
@@ -276,9 +296,10 @@ def _pages(n: int, folder: str = "") -> list[tuple[str, bytes]]:
 
 
 def _byod_branch(nb: dict) -> str:
+    """The Section 4 BYOD loader (``def load_byod_splits():`` ... ``return splits``) plus a call that binds ``splits``."""
     source = _cell_with(nb, "USE_BYOD = False  # @param")
-    body = source.split("\nif USE_BYOD:\n", 1)[1].split("\nelse:\n", 1)[0]
-    return textwrap.dedent(body)
+    body = "def load_byod_splits():\n" + source.split("\ndef load_byod_splits():\n", 1)[1].split("\n    return splits\n", 1)[0]
+    return textwrap.dedent(body) + "\n    return splits\n\n\nsplits = load_byod_splits()\n"
 
 
 def _run_byod(nb: dict, work: Path, payload: bytes) -> dict:
