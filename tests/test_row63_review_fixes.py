@@ -148,17 +148,17 @@ def test_r63_m3_byod_refusal_prints_one_message_and_clears_stale_results(nb: dic
     ns = _section4_namespace(tmp_path, source)
     ns.update({"frozen": {"anls": 1.0}, "splits": {"stale": []}})
     out = io.StringIO()
-    with contextlib.redirect_stdout(out):
-        exec(compile(source, "<section4>", "exec"), ns)  # no exception: a refusal is not a crash
-    printed = out.getvalue()
-    assert printed.count("BYOD input refused:") == 1 and "mine.zip: not a zip archive" in printed and "run this cell again" in printed
+    with contextlib.redirect_stdout(out), pytest.raises(ValueError) as caught:
+        exec(compile(source, "<section4>", "exec"), ns)  # DAT20: one Refused: line, and the cell stops
+    (line,) = caught.value._render_traceback_()
+    assert line.startswith("Refused: mine.zip: not a zip archive") and "run this cell again" in line and "Traceback" not in out.getvalue()
     assert ns["byod_refusal"] and ns["DATA_READY"] is False
     assert "splits" not in ns and "frozen" not in ns and "input_manifest" not in ns
     # R63 Codex #8: earlier outputs are kept (moved into outputs/previous_run_<time>/), never deleted
     archives = [p for p in Path("outputs").iterdir() if p.name.startswith("previous_run_")]
     assert len(archives) == 1 and sorted(os.listdir("outputs")) == [archives[0].name]
     assert (archives[0] / "pix2struct_docvqa_result.json").is_file() and (archives[0] / "pix2struct_docvqa_adapter" / "manifest.json").is_file()
-    assert "moved, not deleted" in printed
+    assert "moved, not deleted" in line
     guard = "if not globals().get('DATA_READY'):\n    raise RuntimeError("
     for needle in ("majority = majority_answer_baseline(", "adapt_result = pipe.adapt(", "adapted = pipe.evaluate(", "reloaded = Pix2StructDocVQAPipeline.from_artifact("):
         cell = _cell_with(nb, needle)

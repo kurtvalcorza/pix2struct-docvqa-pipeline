@@ -129,9 +129,12 @@ TEMPLATE = {
                 "USE_BYOD = False  # @param {{type:\"boolean\"}}\n"
                 "BYOD_PATH = ''  # @param {{type:\"string\"}}\n"
                 "SPLIT_SEED = 42\n"
-                "os.makedirs('outputs', exist_ok=True)\n\n\n"
+                "os.makedirs('outputs', exist_ok=True)\n"
+                "# The file the learner gave, by name; '(no file)' until an upload arrives.\n"
+                "byod_label = (Path(BYOD_PATH.strip()).expanduser().name or BYOD_PATH.strip()) if BYOD_PATH.strip() else '(no file)'\n\n\n"
                 'def byod_file(path, kind, suffixes=()):\n'
                 '    """BYOD path first (works on Colab, Kaggle and Jupyter); on Colab an empty path opens the upload dialog."""\n'
+                '    global byod_label\n'
                 '    if str(path).strip():\n'
                 '        source = Path(str(path).strip()).expanduser()\n'
                 '        if not source.is_file():\n'
@@ -145,6 +148,7 @@ TEMPLATE = {
                 '        if len(uploaded) != 1:\n'
                 "            raise ValueError(f'Upload exactly one {{kind}} (received {{len(uploaded)}} files; a cancelled dialog sends none). Run this cell again.')\n"
                 '        name, payload = next(iter(uploaded.items()))\n'
+                '        byod_label = Path(name).name\n'
                 "        source = Path('work') / Path(name).name\n"
                 '        source.parent.mkdir(parents=True, exist_ok=True)\n'
                 '        source.write_bytes(payload)\n'
@@ -172,7 +176,16 @@ TEMPLATE = {
                 "        raise ValueError(f'{{byod_zip.name}}: split(s) {{small}} hold fewer than MIN_RECORDS = {{MIN_RECORDS}} rows (rows per split {{ {{name: len(rows) for name, rows in splits.items()}} }}, documents per split {{documents}}, {{len(records)}} rows on {{sum(documents.values())}} documents in total). Every split needs at least {{MIN_RECORDS}} rows; with the 0.15 / 0.20 validation / test fractions that is 17 documents at three questions each — add documents or questions.')\n"
                 "    print({{'byod_zip': byod_zip.name, 'members': len(members), 'expanded_bytes': expanded, 'rows': len(records), 'documents_per_split': documents}})\n"
                 "    return splits\n\n\n"
-                "# DAT20: a refused BYOD input is a message, not a crash. Genuine failures (and any failure of the default corpus) still raise.\n"
+                "class BYODRefusal(ValueError):\n"
+                "    \"\"\"A refused BYOD input: ``BYODRefusal(file_name, reason_and_fix)``.\"\"\"\n\n"
+                "    dimer_refusal = True\n\n"
+                "    def __init__(self, file_name, reason):\n"
+                "        super().__init__(f\"{{file_name}}: {{reason}}\")\n"
+                "        self.file_name = file_name\n"
+                "        self.reason = reason\n\n"
+                "    def _render_traceback_(self):\n"
+                "        return [f\"Refused: {{self}}\"]\n\n\n"
+                "# DAT20: a refused BYOD input is one Refused: line, not a crash, and Run all stops here. Genuine failures (and any failure of the default corpus) still raise.\n"
                 "byod_refusal = None\n"
                 "DATA_READY = False\n"
                 "try:\n"
@@ -196,7 +209,9 @@ TEMPLATE = {
                 "        for stale in previous:\n"
                 "            shutil.move(str(stale), str(archive / stale.name))\n"
                 "    kept = f'Earlier result files were moved, not deleted, to {{archive}}/ so they cannot be read as results for your data. ' if archive is not None else ''\n"
-                "    print(f'BYOD input refused: {{byod_refusal}}\\nNothing was scored. ' + kept + 'Fix the named file or row, then run this cell again; Sections 5-8 refuse to run until this cell prints the input manifest.')\n"
+                "    reason = byod_refusal.rstrip('.')\n"
+                "    reason = reason[len(byod_label) + 2:] if reason.startswith(byod_label + ': ') else reason  # the file is named once\n"
+                "    raise BYODRefusal(byod_label, f'{{reason}}. Nothing was scored. ' + kept + 'Fix the named file or row, then run this cell again; Sections 5-8 refuse to run until this cell prints the input manifest.') from None\n"
                 "if byod_refusal is None:\n"
                 "    all_records = [record for rows in splits.values() for record in rows]\n"
                 "    corpus_digest = dataset_digest(all_records)\n"
@@ -520,7 +535,7 @@ TEMPLATE = {
         '- **Section 3 reports a size or SHA-256 mismatch, or cannot reach the Hub** — the message names the file. Delete the folder Section 3 prints as `weights_dir` and run Section 3 again.\n'
         "- **The corpus digest differs from `SAMPLE_DIGEST`** — the page images depend on the Pillow build's bundled font rendering; use the pinned environment Section 1 builds.\n"
         '- **BYOD: "BYOD path … does not exist" / "the upload dialog exists only in Google Colab" / "Upload exactly one …"** — set `BYOD_PATH` to the zip in the runtime (it works on Kaggle and Jupyter); on Colab an empty path opens the dialog, and a cancelled dialog stops with that message.\n'
-        '- **BYOD: "exceed the BYOD ceiling", "not a zip archive", "hold fewer than MIN_RECORDS", or a `load_byod_dataset` / `validate_dataset` refusal** — Section 4 prints one `BYOD input refused:` message naming the zip, the `records.csv` row and the rule (member count or extracted size, too few rows in a split, duplicate id, a file that is not a decodable image, empty question or answer), moves earlier result files into `outputs/previous_run_<time>/` (kept, not deleted), and Sections 5–8 refuse to run until Section 4 accepts the zip; 17 documents at three questions each is the minimum.\n\n'
+        '- **BYOD: "exceed the BYOD ceiling", "not a zip archive", "hold fewer than MIN_RECORDS", or a `load_byod_dataset` / `validate_dataset` refusal** — Section 4 shows one line, `Refused: <file>: …`, with no traceback (Run all stops there), naming the zip, the `records.csv` row and the rule (member count or extracted size, too few rows in a split, duplicate id, a file that is not a decodable image, empty question or answer), moves earlier result files into `outputs/previous_run_<time>/` (kept, not deleted), and Sections 5–8 refuse to run until Section 4 accepts the zip; 17 documents at three questions each is the minimum.\n\n'
         '## Glossary\n\n'
         '- **OCR-free document QA** — answering a question about a page image without a separate text-recognition step.\n'
         '- **Patches** — the composite image (question header plus page) is cut into at most 2,048 patches the encoder reads.\n'
