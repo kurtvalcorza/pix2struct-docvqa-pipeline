@@ -118,7 +118,7 @@ TEMPLATE = {
                 "## 4. Build or upload the corpus, then validate it\n\n"
                 "The default corpus has three questions per document and fixed document-level splits. `validate_dataset` checks "
                 "every id, decoded image, question and accepted answer; `check_split_disjoint` refuses leakage. The aggregate "
-                "digest must equal `SAMPLE_DIGEST` (the page images depend on the pinned Pillow 11.3.0 build, which the isolated environment provides). Two refusal probes demonstrate duplicate-id and cross-split rejection. With `USE_BYOD`, the zip is checked for its member count and extracted size before it is read, every split must hold at least `MIN_RECORDS` (8) rows, and a refused zip prints one message naming the zip, the row and the rule, with no traceback. A refusal clears the run state (`DATA_READY` becomes `False` and the result variables are dropped) and moves earlier result files into a `outputs/previous_run_<time>/` folder, kept rather than deleted, so nothing from a previous run can be read as the result for your data; Sections 5–8 refuse to run until this cell prints the input manifest. Fix the named file and run this cell again. On the default sample the cell also prints how often each vendor, city and layout occurs per split."
+                "digest must equal `SAMPLE_DIGEST` (the page images depend on the pinned Pillow 13.0.0 build, which the isolated environment provides). Two refusal probes demonstrate duplicate-id and cross-split rejection. With `USE_BYOD`, the zip is checked for its member count and extracted size before it is read, every split must hold at least `MIN_RECORDS` (8) rows, and a refused zip prints one message naming the zip, the row and the rule, with no traceback. A refusal clears the run state (`DATA_READY` becomes `False` and the result variables are dropped) and moves earlier result files into a `outputs/previous_run_<time>/` folder, kept rather than deleted, so nothing from a previous run can be read as the result for your data; Sections 5–8 refuse to run until this cell prints the input manifest. Fix the named file and run this cell again. On the default sample the cell also prints how often each vendor, city and layout occurs per split."
                 '\n\n**Predict before running:** why split by document instead of by question? How many train, validation and test rows will the 120 questions give?'
             ),
             "code": (
@@ -217,7 +217,7 @@ TEMPLATE = {
                 "    corpus_digest = dataset_digest(all_records)\n"
                 "    if not USE_BYOD and corpus_digest != SAMPLE_DIGEST:\n"
                 "        import PIL\n"
-                "        raise AssertionError(f'corpus digest {{corpus_digest[:16]}}... differs from SAMPLE_DIGEST {{SAMPLE_DIGEST[:16]}}...: the page images depend on the Pillow build (pinned pillow==11.3.0; this environment runs Pillow {{PIL.__version__}}); run in the isolated environment Section 1 builds')\n"
+                "        raise AssertionError(f'corpus digest {{corpus_digest[:16]}}... differs from SAMPLE_DIGEST {{SAMPLE_DIGEST[:16]}}...: the page images depend on the Pillow build (pinned pillow==13.0.0; this environment runs Pillow {{PIL.__version__}}); run in the isolated environment Section 1 builds')\n"
                 "    findings = []\n"
                 "    try:\n"
                 "        validate_dataset([*splits['train'][:8], {{**splits['train'][0]}}])\n"

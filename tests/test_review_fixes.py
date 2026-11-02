@@ -258,7 +258,7 @@ def test_psd_m5_preinstalled_variable_documented_and_digest_assert_names_pillow(
     code = "\n".join(_src(c) for c in _code_cells(nb))
     assert "DIMER_NOTEBOOK_CI_PREINSTALLED" in code and "`DIMER_NOTEBOOK_CI_PREINSTALLED=1` lets an" in _markdown(nb)
     four = _cell_with(nb, "USE_BYOD = False  # @param")
-    assert "pinned pillow==11.3.0" in four and "PIL.__version__" in four
+    assert "pinned pillow==13.0.0" in four and "PIL.__version__" in four
     assert "assert corpus_digest == SAMPLE_DIGEST, (corpus_digest, SAMPLE_DIGEST)" not in four
 
 
