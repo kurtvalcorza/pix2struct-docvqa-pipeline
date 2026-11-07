@@ -1,0 +1,71 @@
+{
+  "repo": "pix2struct-docvqa-pipeline",
+  "sha": "051c2756188717d7bfad48f6df00e896c92afe52",
+  "notebook": "tutorials/pix2struct_docvqa_colab.ipynb",
+  "blob": "1563285ab40254c7c4b55d6b9d06341d64830eb8",
+  "gpu": "T4",
+  "session": "suite-pix2struct-051c275-58fe",
+  "started_utc": "2026-11-03T03:53:32+00:00",
+  "runner": "Colab CLI `colab exec -f` on a fresh session (not a browser Run all)",
+  "overrides": [
+    {
+      "name": "USE_BYOD",
+      "from": "False",
+      "to": "True"
+    },
+    {
+      "name": "BYOD_PATH",
+      "from": "''",
+      "to": "'/etc/hostname'"
+    }
+  ],
+  "run_copy_blob": "d60142bd99e2827f8e139d5d180d5b1980b6788e",
+  "run_copy_sha256": "65f3c9dd7e21140100fe4db4729d695915cddbb31b648edc9be60816ce0c4fc8",
+  "run_copy_note": "refusal run: the run copy is the committed notebook with the listed assignment overrides, cut immediately after the refusal cell and re-serialised (nbformat layout); input_unchanged compares against that copy",
+  "truncated_after_cell": "pix2struct_docvqa-17",
+  "refusal_cell_ref": "pix2struct_docvqa-17",
+  "refusal_cell_index": 7,
+  "cells_dropped": 17,
+  "code_cells_dropped": 5,
+  "original_sha256": "c85fbafdba9dde14f88a3ea4b3014e1b12889360616d90561d083c3134169045",
+  "status": "[suite-pix2struct-051c275-58fe] gpu-t4-s-usw1b0-3eacp4vz1v7lf | Hardware: T4 | Shape: Standard | Variant: GPU | Status: IDLE",
+  "exec_exit_code": 0,
+  "stopped": true,
+  "stop_verified": true,
+  "wall_s": 130.0,
+  "input_unchanged": true,
+  "executed_file": "pix2struct_docvqa_colab_051c275_colab-cli-t4_output.ipynb",
+  "log_cells": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7
+  ],
+  "log_total": 7,
+  "code_cells": 7,
+  "executed_cells": 4,
+  "errors": [
+    {
+      "cell": "pix2struct_docvqa-17",
+      "ename": "IsolatedCellRefusal",
+      "evalue": "hostname: expected a zip with records.csv and page images ending in .zip. Nothing was scored. Fix the named file or row, then run this cell again; Sections 5-8 refuse to run until this cell prints the input manifest."
+    }
+  ],
+  "execution_counts": [],
+  "sequential": null,
+  "executed_sha256": "e1723bdf7eb1368ce325122e6ec1bf18a769ed3fca7838a9c8b9da1528a5cb5b",
+  "log_sequential_complete": true,
+  "mode": "expect_refusal",
+  "refusal_line": "Refused: hostname: expected a zip with records.csv and page images ending in .zip. Nothing was scored. Fix the named file or row, then run this cell again; Sections 5-8 refuse to run until this cell prints the input manifest.",
+  "halting_cell_index": 7,
+  "halting_cell_id": "pix2struct_docvqa-17",
+  "error_cells": [
+    7
+  ],
+  "refusal_fail_reasons": [],
+  "refusal_ok": true,
+  "verdict": "PASS"
+}
